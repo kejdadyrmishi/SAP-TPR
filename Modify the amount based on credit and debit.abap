@@ -256,3 +256,20 @@ FUNCTION zfi_intent_upload.
   ENDIF.
 
 ENDFUNCTION.
+
+*----------------------------------------------------------------------*
+***INCLUDE LZFI_INTENT_UPLOAF01.
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Form update_zfi_intent_uploa
+*&---------------------------------------------------------------------*
+FORM update_zfi_intent_uploa.
+  DATA lt_zfi_int TYPE STANDARD TABLE OF zfi_intent_uploa.
+
+  IMPORT et_int = gt_zfi_intent_uploa FROM MEMORY ID 'ZFI_INT_UPL'.
+  IF gt_zfi_intent_uploa IS NOT INITIAL.
+    FREE MEMORY ID 'ZFI_INT_UPL'.
+    MOVE-CORRESPONDING gt_zfi_intent_uploa TO lt_zfi_int.
+    MODIFY zfi_intent_uploa FROM TABLE lt_zfi_int.
+  ENDIF.
+ENDFORM.
