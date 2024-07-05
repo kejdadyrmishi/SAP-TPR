@@ -112,6 +112,10 @@ FUNCTION zfi_intent_upload.
           CONTINUE.
         ENDIF.
 
+        IF lv_sum_bseg IS INITIAL.
+          CONTINUE.
+        ENDIF.
+
         READ TABLE lt_int_tot INTO ls_int_tot WITH KEY z_cc = <fs_zfi_intent_uploa>-z_cc
                                                        z_vv = <fs_zfi_intent_uploa>-z_vv BINARY SEARCH.
 
