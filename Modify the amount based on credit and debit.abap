@@ -50,7 +50,8 @@ FUNCTION zfi_intent_upload.
   DATA(lv_bldat_st)  = ls_bkpf-bldat(4) && '0101'.
   DATA(lv_bldat_end) = ls_bkpf-bldat(4) && '1231'.
 
-  SELECT * FROM zfi_intent_uploa
+  SELECT *
+    FROM zfi_intent_uploa
   INTO TABLE @gt_zfi_intent_uploa
     FOR ALL ENTRIES IN @t_bseg
         WHERE z_cc     = @t_bseg-bukrs
@@ -59,7 +60,7 @@ FUNCTION zfi_intent_upload.
           AND z_to    BETWEEN @lv_bldat_st AND @lv_bldat_end .
   CHECK sy-subrc IS INITIAL.
 
-  SORT gt_zfi_intent_uploa BY z_cc z_vv z_from DESCENDING.
+  SORT gt_zfi_intent_uploa BY z_cc DESCENDING z_vv DESCENDING z_from ASCENDING.
 
   LOOP AT gt_zfi_intent_uploa ASSIGNING FIELD-SYMBOL(<ls_zfi>) .
     <ls_zfi>-remain = <ls_zfi>-z_plafond - <ls_zfi>-z_balance.
@@ -69,10 +70,6 @@ FUNCTION zfi_intent_upload.
     CLEAR ls_int_tot.
   ENDLOOP.
   SORT lt_int_tot BY z_cc z_vv.
-
-*  Start date from index 1
-  DATA(lt_intent_from) = gt_zfi_intent_uploa.
-  SORT lt_intent_from BY z_cc z_vv z_from ASCENDING.
 
   CASE sy-tcode.
     WHEN 'FB60' OR 'MIRO'.
@@ -127,14 +124,6 @@ FUNCTION zfi_intent_upload.
             txt3  = |{ TEXT-t03 }   { ls_int_tot-z_plafond - ( lv_sum_bseg + ls_int_tot-z_balance ) CURRENCY = ls_bkpf-waers NUMBER = USER }|
             txt4  = |{ TEXT-t04 }   { lv_sum_bseg CURRENCY = ls_bkpf-waers NUMBER = USER }|.
 
-        IF lv_sum_bseg <= <fs_zfi_intent_uploa>-remain.
-          <fs_zfi_intent_uploa>-z_balance += lv_sum_bseg.
-          <fs_zfi_intent_uploa>-remain    -= lv_sum_bseg.
-          CONTINUE.
-        ENDIF.
-
-*        lv_sum_bseg -= <fs_zfi_intent_uploa>-z_balance.
-
         IF ls_int_tot-z_plafond - ( lv_sum_bseg + ls_int_tot-z_balance ) < 0.
           lv_message = TEXT-e01.
           REPLACE '&1' INTO lv_message WITH lv_lifnr.
@@ -142,12 +131,12 @@ FUNCTION zfi_intent_upload.
         ENDIF.
 
 *        lv_sum_bseg = lv_sum_bseg + <fs_zfi_intent_uploa>-z_balance.
-        READ TABLE lt_intent_from TRANSPORTING NO FIELDS
+        READ TABLE gt_zfi_intent_uploa TRANSPORTING NO FIELDS
           WITH KEY z_cc = ls_int_tot-z_cc
                    z_vv = ls_int_tot-z_vv
                    BINARY SEARCH.
         IF sy-subrc = 0.
-          LOOP AT lt_intent_from ASSIGNING FIELD-SYMBOL(<ls_intent_from>) FROM sy-tabix.
+          LOOP AT gt_zfi_intent_uploa ASSIGNING FIELD-SYMBOL(<ls_intent_from>) FROM sy-tabix.
             IF <ls_intent_from>-z_cc <> ls_int_tot-z_cc
               OR <ls_intent_from>-z_vv <> ls_int_tot-z_vv.
               EXIT.
@@ -155,6 +144,8 @@ FUNCTION zfi_intent_upload.
 
             IF lv_sum_bseg = 0.
               EXIT.
+            ELSEIF <ls_intent_from>-remain = 0.
+              CONTINUE.
             ELSEIF lv_sum_bseg >= <ls_intent_from>-remain.
               lv_sum_bseg -= <ls_intent_from>-remain.
               <ls_intent_from>-z_balance += <ls_intent_from>-remain.
@@ -162,15 +153,8 @@ FUNCTION zfi_intent_upload.
             ELSE.
               <ls_intent_from>-z_balance += lv_sum_bseg.
               <ls_intent_from>-remain -= lv_sum_bseg.
-            ENDIF.
-
-            READ TABLE gt_zfi_intent_uploa ASSIGNING <fs_zfi_intent_uploa>
-              WITH KEY z_cc   = <ls_intent_from>-z_cc
-                       z_vv   = <ls_intent_from>-z_vv
-                       z_from = <ls_intent_from>-z_from.
-            IF sy-subrc = 0.
-              <fs_zfi_intent_uploa>-z_balance = <ls_intent_from>-z_balance.
-              <fs_zfi_intent_uploa>-remain    = <ls_intent_from>-remain.
+              CLEAR lv_sum_bseg.
+              EXIT.
             ENDIF.
 
           ENDLOOP.
@@ -178,8 +162,9 @@ FUNCTION zfi_intent_upload.
 
       ENDLOOP.
 
-
     WHEN 'FB08' OR 'MR8M'.
+      SORT gt_zfi_intent_uploa BY z_cc DESCENDING z_vv DESCENDING z_from DESCENDING.
+
       LOOP AT t_bkpf INTO ls_bkpf.
         LOOP AT t_bseg INTO ls_bseg
               WHERE bukrs = ls_bkpf-bukrs
@@ -256,20 +241,3 @@ FUNCTION zfi_intent_upload.
   ENDIF.
 
 ENDFUNCTION.
-
-*----------------------------------------------------------------------*
-***INCLUDE LZFI_INTENT_UPLOAF01.
-*----------------------------------------------------------------------*
-*&---------------------------------------------------------------------*
-*& Form update_zfi_intent_uploa
-*&---------------------------------------------------------------------*
-FORM update_zfi_intent_uploa.
-  DATA lt_zfi_int TYPE STANDARD TABLE OF zfi_intent_uploa.
-
-  IMPORT et_int = gt_zfi_intent_uploa FROM MEMORY ID 'ZFI_INT_UPL'.
-  IF gt_zfi_intent_uploa IS NOT INITIAL.
-    FREE MEMORY ID 'ZFI_INT_UPL'.
-    MOVE-CORRESPONDING gt_zfi_intent_uploa TO lt_zfi_int.
-    MODIFY zfi_intent_uploa FROM TABLE lt_zfi_int.
-  ENDIF.
-ENDFORM.
