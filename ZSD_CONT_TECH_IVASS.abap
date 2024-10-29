@@ -3,28 +3,28 @@
 *&---------------------------------------------------------------------*
 *&
 *&---------------------------------------------------------------------*
-REPORT zsd_cont_tech_ivass.
+REPORT zfi_cont_tech_ivass.
 
-TABLES zsd_cont_tech_hd.
+TABLES zfi_t_hcont_tech.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-015.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-007.
   PARAMETERS: r1 RADIOBUTTON GROUP rb USER-COMMAND u01 DEFAULT 'X', "register directly
-              r2 RADIOBUTTON GROUP rb, " view and register
+              r2 RADIOBUTTON GROUP rb , " view and register
               r3 RADIOBUTTON GROUP rb. "view history
 SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
-  PARAMETERS :p_file TYPE string DEFAULT 'C:\Users\Perdorues\OneDrive\Desktop\Input per Cruscotto.csv' MODIF ID bl1,
+  PARAMETERS :p_file TYPE string MODIF ID bl1,
               p_doct TYPE blart DEFAULT 'B2' MODIF ID bl1.
 SELECTION-SCREEN END OF BLOCK b1.
 
-SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-016.
-  SELECT-OPTIONS : s_awkey FOR zsd_cont_tech_hd-awkey MODIF ID bl2,
-                   s_bukrs FOR zsd_cont_tech_hd-bukrs MODIF ID bl2,
-                   s_gjahr FOR zsd_cont_tech_hd-gjahr MODIF ID bl2,
-                   s_budat FOR zsd_cont_tech_hd-budat MODIF ID bl2,
-                   s_bldat FOR zsd_cont_tech_hd-bldat MODIF ID bl2,
-                   s_blart FOR zsd_cont_tech_hd-blart MODIF ID bl2.
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_awkey FOR zfi_t_hcont_tech-awkey MODIF ID bl2,
+                   s_bukrs FOR zfi_t_hcont_tech-bukrs MODIF ID bl2,
+                   s_gjahr FOR zfi_t_hcont_tech-gjahr MODIF ID bl2,
+                   s_budat FOR zfi_t_hcont_tech-budat MODIF ID bl2,
+                   s_bldat FOR zfi_t_hcont_tech-bldat MODIF ID bl2,
+                   s_blart FOR zfi_t_hcont_tech-blart MODIF ID bl2.
 
 SELECTION-SCREEN END OF BLOCK b3.
 
@@ -141,7 +141,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
       WHEN r1 OR r2.
 
         IF p_file IS INITIAL OR p_doct IS INITIAL.
-          MESSAGE 'Please, fill obligatory fields' TYPE 'S' DISPLAY LIKE 'E'.
+          MESSAGE 'Please, fill obligatory fields!'(008) TYPE 'S' DISPLAY LIKE 'E'.
           RETURN.
         ENDIF.
 
@@ -267,7 +267,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         lo_column ?= lo_cols->get_column( 'TIME' ).
         lo_column->set_key( ).
 
-        DATA(lv_text) = 'Progressivo Scrittura contabile'.
+        DATA(lv_text) = CONV string( 'Number of Line Item Within Accounting Document'(009) ).
         lo_column ?= lo_cols->get_column( 'AWKEY' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
         lo_column->set_medium_text( CONV #( lv_text ) ).
@@ -277,20 +277,20 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         lo_column ?= lo_cols->get_column( 'BUZEI' ).
         lo_column->set_key( ).
 
-        lv_text = 'Progressivo numero'.
+        lv_text = 'Progressive number'(010).
         lo_column ?= lo_cols->get_column( 'PROG_NR' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
         lo_column->set_medium_text( CONV #( lv_text ) ).
         lo_column->set_long_text( CONV #( lv_text ) ).
 
-        lv_text = CONV scrtext_s( 'Status' ).
+        lv_text = CONV scrtext_s( 'Status'(011) ).
         lo_column ?= lo_cols->get_column( 'ICON' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
         lo_column->set_medium_text( CONV #( lv_text ) ).
         lo_column->set_long_text( CONV #( lv_text ) ).
         lo_column->set_icon( ).
 
-        lv_text = 'Message'.
+        lv_text = 'Message'(012).
         lo_column ?= lo_cols->get_column( 'MESSAGE' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
         lo_column->set_medium_text( CONV #( lv_text ) ).
@@ -352,8 +352,10 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              account_id    TYPE string,
            END OF ty_split.
 
-    DATA: lt_strings TYPE STANDARD TABLE OF string,
-          ls_split   TYPE ty_split.
+    DATA: lt_strings   TYPE STANDARD TABLE OF string,
+          ls_split     TYPE ty_split,
+          lv_line      TYPE string,
+          lt_filetable TYPE TABLE OF string.
 
     cl_gui_frontend_services=>gui_upload( EXPORTING
                                         filename = p_file
@@ -363,8 +365,32 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
     LOOP AT lt_strings ASSIGNING FIELD-SYMBOL(<ls_strings>) FROM 2.
 
+*    DATA(lv_file) = ''.
+*    OPEN DATASET lv_file FOR INPUT IN TEXT MODE ENCODING DEFAULT.
+*
+*    IF sy-subrc <> 0.
+*      MESSAGE 'Error opening the file' TYPE 'E'.
+*      RETURN.
+*    ENDIF.
+*
+*    DO  .
+*
+*      READ DATASET lv_file INTO lv_line.
+*
+*      IF sy-subrc <> 0 .
+*        EXIT.
+*      ENDIF.
+*
+*      APPEND lv_line TO lt_filetable.
+*    ENDDO.
+*
+*    CLOSE DATASET lv_file.
+*
+*
+*    LOOP AT lt_filetable INTO lv_line.
 
       SPLIT <ls_strings> AT ';' INTO
+*      SPLIT lv_line AT ';' INTO
             ls_split-awkey
             ls_split-comp_code
             ls_split-ledger
@@ -443,11 +469,11 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
            END OF ty_post_bapi.
 
     DATA: lt_selected    TYPE salv_t_row,
-          lt_db_item_all TYPE STANDARD TABLE OF zsd_cont_tech_it,
-          lt_db_item     TYPE STANDARD TABLE OF zsd_cont_tech_it,
-          lt_db_header   TYPE STANDARD TABLE OF zsd_cont_tech_hd,
-          ls_db_header   TYPE zsd_cont_tech_hd,
-          ls_db_item     TYPE zsd_cont_tech_it,
+          lt_db_item_all TYPE STANDARD TABLE OF zfi_t_icont_tech,
+          lt_db_item     TYPE STANDARD TABLE OF zfi_t_icont_tech,
+          lt_db_header   TYPE STANDARD TABLE OF zfi_t_hcont_tech,
+          ls_db_header   TYPE zfi_t_hcont_tech,
+          ls_db_item     TYPE zfi_t_icont_tech,
           lv_error       TYPE abap_bool,
           lv_obj_key     TYPE bapiache09-obj_key,
           lt_post_bapi   TYPE STANDARD TABLE OF ty_post_bapi.
@@ -476,7 +502,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
       ENDIF.
 
 *      SELECT SINGLE @abap_true
-*        FROM zsd_cont_tech_hd
+*        FROM ZFI_T_HCONT_TECH
 *        INTO @DATA(lv_exists)
 *        WHERE awkey = @<ls_hdr>-awkey.
 
@@ -654,6 +680,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
         IF lv_error IS NOT INITIAL.
           lv_no_commit = abap_true.
+          EXIT.
         ENDIF.
 
       ENDLOOP.
@@ -706,8 +733,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
     ENDLOOP.
 
     IF iv_test IS INITIAL.
-      INSERT zsd_cont_tech_hd FROM TABLE lt_db_header.
-      INSERT zsd_cont_tech_it FROM TABLE lt_db_item_all.
+      INSERT zfi_t_hcont_tech FROM TABLE lt_db_header.
+      INSERT zfi_t_icont_tech FROM TABLE lt_db_item_all.
       COMMIT WORK.
 
       MESSAGE 'Data saved successfully!'(004) TYPE 'S'.
@@ -910,6 +937,12 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
     DELETE ADJACENT DUPLICATES FROM lt_return COMPARING message.
     DATA(lv_uzeit) = sy-uzeit.
     LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>).
+
+      IF <ls_return>-type = 'S'
+        AND <ls_return>-id = 'RW'
+        AND <ls_return>-number = 614.
+        <ls_return>-message = 'Document Ready for Registration'(013) .
+      ENDIF.
 
       APPEND VALUE #( time    = lv_uzeit
                       awkey   = iv_doc
@@ -1144,7 +1177,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             budat         AS pstng_date,
             bldat         AS doc_date,
             blart         AS doc_type
-      FROM zsd_cont_tech_hd
+      FROM zfi_t_hcont_tech
       WHERE awkey IN @s_awkey
         AND bukrs IN @s_bukrs
         AND gjahr IN @s_gjahr
@@ -1169,7 +1202,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
            tsl,
            waers AS currency
 
-      FROM zsd_cont_tech_it
+      FROM zfi_t_icont_tech
       FOR ALL ENTRIES IN @mt_header
       WHERE awkey = @mt_header-awkey
       INTO CORRESPONDING FIELDS OF TABLE @mt_items.
