@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& REPORT ZSD_TRANS_BANK_ACC
+*& REPORT ZFI_CONT_TECH_IVASS
 *&---------------------------------------------------------------------*
 *&
 *&---------------------------------------------------------------------*
@@ -334,8 +334,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              doc_type      TYPE string,
              header_txt    TYPE string,
              fisc_year     TYPE string,
-             pstng_date    TYPE string,
-             doc_date      TYPE string,
+             pstng_date    TYPE char10,
+             doc_date      TYPE char10,
              gl_account    TYPE string,
              dare_interno  TYPE string,
              avere_interno TYPE string,
@@ -478,6 +478,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
           lv_obj_key     TYPE bapiache09-obj_key,
           lt_post_bapi   TYPE STANDARD TABLE OF ty_post_bapi.
 
+    GET TIME FIELD DATA(lv_uzeit).
+
     IF iv_job IS INITIAL.
       TRY.
           lt_selected = mo_hier->get_selections( level = 1 )->get_selected_rows( ).
@@ -501,10 +503,23 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-*      SELECT SINGLE @abap_true
-*        FROM ZFI_T_HCONT_TECH
-*        INTO @DATA(lv_exists)
-*        WHERE awkey = @<ls_hdr>-awkey.
+      SELECT SINGLE @abap_true
+        FROM zfi_t_hcont_tech
+        INTO @DATA(lv_exists)
+        WHERE awkey = @<ls_hdr>-awkey.
+
+      IF sy-subrc = 0.
+
+        APPEND VALUE #( time    = lv_uzeit
+                        awkey   = <ls_hdr>-awkey
+                        prog_nr = 1
+                        icon    = icon_red_light
+                        message = 'Record already exists in the database!'(017)
+                        belnr   = lv_obj_key(10)
+                      ) TO mt_messages.
+
+        CONTINUE.
+      ENDIF.
 
       APPEND INITIAL LINE TO lt_post_bapi ASSIGNING FIELD-SYMBOL(<ls_post_bapi_main>).
       <ls_post_bapi_main>-header = VALUE #(
@@ -739,7 +754,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
       MESSAGE 'Data saved successfully!'(004) TYPE 'S'.
     ELSE.
-      MESSAGE 'Simulated concluded. Please, check the messages!'(006) TYPE 'S'.
+      MESSAGE 'Simulation concluded. Please, check the messages!'(006) TYPE 'S'.
     ENDIF.
 
   ENDMETHOD.
@@ -890,7 +905,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_user_comm.
-
+    CLEAR: mt_messages.
     CASE e_salv_function.
       WHEN 'FC_SIMU'.
         post_doc( iv_test  = abap_true ).
@@ -936,18 +951,39 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
     DELETE ADJACENT DUPLICATES FROM lt_return COMPARING message.
     DATA(lv_uzeit) = sy-uzeit.
-    LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>).
+    DATA(lv_progr) = 0.
+
+    LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>)
+       WHERE NOT ( type = 'E' AND id =  'RW' AND number = '609' ).
 
       IF <ls_return>-type = 'S'
-        AND <ls_return>-id = 'RW'
-        AND <ls_return>-number = 614.
-        <ls_return>-message = 'Document Ready for Registration'(013) .
+        AND <ls_return>-id = 'RW'.
+
+        CASE <ls_return>-number.
+          WHEN 614.
+
+            IF iv_buzei IS INITIAL.
+              <ls_return>-message = 'Document Ready for Registration COTEC'(013) .  " Documento registrato COTEC
+            ELSE.
+              <ls_return>-message = 'Document Ready for Registration Girofondo Transito'(014) . "Documento registrato Girofondo Transitorio
+            ENDIF.
+
+          WHEN 605.
+
+            IF iv_buzei IS INITIAL.
+              <ls_return>-message = 'Registered Document COTEC'(015) .
+            ELSE.
+              <ls_return>-message = 'Registered Document Transitional Girofondo'(016).
+            ENDIF.
+        ENDCASE.
+
       ENDIF.
 
+      lv_progr += 1.
       APPEND VALUE #( time    = lv_uzeit
                       awkey   = iv_doc
                       buzei   = iv_buzei
-                      prog_nr = sy-tabix
+                      prog_nr = lv_progr
                       icon    = SWITCH #(
                       <ls_return>-type
                         WHEN 'E' THEN icon_red_light
