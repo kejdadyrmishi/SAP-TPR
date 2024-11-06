@@ -62,71 +62,41 @@ CLASS lcl_cont_tech_ivass DEFINITION FINAL.
 
   PRIVATE SECTION.
 
-    TYPES: BEGIN OF ty_items,
-             status       TYPE icon-id,
-             belnr        TYPE belnr_d,
-             awkey        TYPE awkey,        " PROGRESSIVO SCRITTURA CONTABILE
-             buzei        TYPE buzei,
-             gl_account   TYPE hkont,        " COGE
-             item_text    TYPE sgtxt,        " TESTO POSIZIONE
-             pargb        TYPE pargb,        " TIPO LAVORO/TIPO PORTAFOGLIO/RAMO
-             bus_area     TYPE gsber,        " LINEA DI BUSINESS (DANN - VITA)
-             segment      TYPE fb_segment,   " LOB
-             attribuzione TYPE dzuonr,       " ATTRIBUZIONE
-             par_comp     TYPE rassc,        " SOCIETÀ PARTNER
-             int_bank     TYPE hbkid,        " BANCA INTERNA
-             account_id   TYPE hktid,        " ID CONTO
-             hsl          TYPE acdoca-hsl, " DARE IMPORTO CURRENCY INTERNA
-             tsl          TYPE acdoca-tsl, " AVERE IMPORTO CURRENCY INTERNA
-             currency     TYPE waers,        " CURRENCY
-           END OF ty_items.
+    TYPES : BEGIN OF ty_alv_data,
+              status       TYPE icon-id,
+              awkey        TYPE awkey,
+              belnr        TYPE belnr_d,
+              doc_type     TYPE blart,
 
-    TYPES: BEGIN OF ty_header,
-             status     TYPE icon-id,
-             belnr      TYPE belnr_d,
-             awkey      TYPE awkey,       " PROGRESSIVO SCRITTURA CONTABILE
-             comp_code  TYPE bukrs,       " SOCIETÀ
-             ledger     TYPE fins_ledger, " LEDGER
-             doc_type   TYPE blart,       " TIPO DOC
-             header_txt TYPE bktxt,       " TESTO TESTATA POSIZIONE
-             fisc_year  TYPE gjahr,       " ESERCIZIO
-             pstng_date TYPE budat,       " DATA REGISTRAZIONE
-             doc_date   TYPE bldat,       " DATA OPERAZIONE
-             t_items    TYPE STANDARD TABLE OF ty_items WITH DEFAULT KEY,
-           END OF ty_header.
+              belnr_gtran  TYPE zfi_t_icont_tech-belnr_gtran,
+              blart_gtran  TYPE zfi_t_icont_tech-blart_gtran,
+              hkont_gtran  TYPE zfi_t_icont_tech-hkont_gtran,
 
-    TYPES : BEGIN OF ty_data,
-              awkey        TYPE ty_header-awkey,
-              belnr_hdr    TYPE ty_header-belnr,
-              comp_code    TYPE ty_header-comp_code,
-              ledger       TYPE ty_header-ledger,
-              doc_type     TYPE ty_header-doc_type,
-              header_txt   TYPE ty_header-header_txt,
-              fisc_year    TYPE ty_header-fisc_year,
-              pstng_date   TYPE ty_header-pstng_date,
-              doc_date     TYPE ty_header-doc_date,
-              buzei        TYPE ty_items-buzei,
-              belnr_itm    TYPE ty_items-belnr,
-              gl_account   TYPE ty_items-gl_account,
-              item_text    TYPE ty_items-item_text,
-              pargb        TYPE ty_items-pargb,
-              bus_area     TYPE ty_items-bus_area,
-              segment      TYPE ty_items-segment,
-              attribuzione TYPE ty_items-attribuzione,
-              par_comp     TYPE ty_items-par_comp,
-              int_bank     TYPE ty_items-int_bank,
-              account_id   TYPE ty_items-account_id,
-              hsl          TYPE ty_items-hsl,
-              tsl          TYPE ty_items-tsl,
-              currency     TYPE ty_items-currency,
-            END OF ty_data.
+              comp_code    TYPE bukrs,
+              ledger       TYPE fins_ledger,
+              header_txt   TYPE bktxt,
+              fisc_year    TYPE gjahr,
+              pstng_date   TYPE budat,
+              doc_date     TYPE bldat,
+              buzei        TYPE buzei,
+              gl_account   TYPE hkont,
+              item_text    TYPE sgtxt,
+              pargb        TYPE pargb,
+              bus_area     TYPE gsber,
+              segment      TYPE fb_segment,
+              attribuzione TYPE dzuonr,
+              par_comp     TYPE rassc,
+              int_bank     TYPE hbkid,
+              account_id   TYPE hktid,
+              hsl          TYPE acdoca-hsl,
+              tsl          TYPE acdoca-tsl,
+              currency     TYPE waers,
+            END OF ty_alv_data.
 
-    DATA: mt_items     TYPE STANDARD TABLE OF ty_items,
-          mt_header    TYPE STANDARD TABLE OF ty_header,
-          mo_salv_msg  TYPE REF TO cl_salv_table,
+    DATA: mo_salv_msg  TYPE REF TO cl_salv_table,
           mo_dock_msg  TYPE REF TO cl_gui_docking_container,
           mo_cust_cont TYPE REF TO cl_gui_custom_container,
-          mt_data      TYPE STANDARD TABLE OF ty_data.
+          mt_alv_data  TYPE STANDARD TABLE OF ty_alv_data.
 
     METHODS csv_to_table.
 
@@ -200,9 +170,9 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
     DATA: lo_functions TYPE REF TO cl_salv_functions_list,
           lo_events    TYPE REF TO cl_salv_events_table.
 
-    IF mt_messages IS INITIAL.
-      RETURN.
-    ENDIF.
+*    IF mt_messages IS INITIAL.
+*      RETURN.
+*    ENDIF.
 
     IF iv_no_dock IS INITIAL.
 
@@ -226,11 +196,11 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
       CREATE OBJECT mo_dock_msg
         EXPORTING
-          parent = cl_gui_container=>screen0
-*         repid  = 'SAPMSSY0'
-*         dynnr  = '0120'
-          ratio  = 50
-          side   = cl_gui_docking_container=>dock_at_right.
+*         parent = cl_gui_container=>screen0
+          repid = sy-repid
+          dynnr = '0001'
+          ratio = 50
+          side  = cl_gui_docking_container=>dock_at_right.
 
       TRY.
           cl_salv_table=>factory(
@@ -386,10 +356,16 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              account_id    TYPE string,
            END OF ty_split.
 
-    DATA: lt_strings   TYPE STANDARD TABLE OF string,
-          ls_split     TYPE ty_split,
-          lv_line      TYPE string,
-          lt_filetable TYPE TABLE OF string.
+    TYPES: BEGIN OF ty_awkey_buzei,
+             awkey TYPE awkey,
+             buzei TYPE buzei,
+           END OF ty_awkey_buzei.
+
+    DATA: lt_strings     TYPE STANDARD TABLE OF string,
+          ls_split       TYPE ty_split,
+          lv_line        TYPE string,
+          lt_filetable   TYPE TABLE OF string,
+          lt_awkey_buzei TYPE SORTED TABLE OF ty_awkey_buzei WITH UNIQUE KEY awkey.
 
     cl_gui_frontend_services=>gui_upload( EXPORTING
                                         filename = p_file
@@ -456,41 +432,85 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
       TRANSLATE ls_split-avere_esterno  USING ',.'.
       TRANSLATE ls_split-dare_esterno   USING ',.'.
 
-      READ TABLE mt_header ASSIGNING FIELD-SYMBOL(<ls_hdr>) WITH KEY awkey = ls_split-awkey.
+      READ TABLE lt_awkey_buzei ASSIGNING FIELD-SYMBOL(<ls_awkey>) WITH KEY awkey = ls_split-awkey BINARY SEARCH.
       IF sy-subrc <> 0.
-        APPEND VALUE #(
-            awkey      = ls_split-awkey
-            comp_code  = ls_split-comp_code
-            ledger     = ls_split-ledger
-            doc_type   = ls_split-doc_type
-            header_txt = ls_split-header_txt
-            fisc_year  = ls_split-fisc_year
-            pstng_date = ls_split-pstng_date
-            doc_date   = ls_split-doc_date
-         ) TO mt_header ASSIGNING <ls_hdr>.
+        INSERT VALUE #( awkey = ls_split-awkey ) INTO TABLE lt_awkey_buzei ASSIGNING <ls_awkey>.
       ENDIF.
+      <ls_awkey>-buzei += 1.
 
-      APPEND INITIAL LINE TO <ls_hdr>-t_items ASSIGNING FIELD-SYMBOL(<ls_item>).
-      <ls_item> = VALUE #(
-                    awkey        = ls_split-awkey
-                    buzei        = lines( <ls_hdr>-t_items )
-                    gl_account   = ls_split-gl_account
-                    item_text    = ls_split-item_text
-                    pargb        = ls_split-pargb
-                    bus_area     = ls_split-bus_area
-                    segment      = ls_split-segment
-                    attribuzione = ls_split-attribuzione
-                    par_comp     = ls_split-par_comp
-                    int_bank     = ls_split-int_bank
-                    account_id   = ls_split-account_id
-                    hsl          = COND #( WHEN ls_split-dare_interno <> 0 THEN -1 * ls_split-dare_interno ELSE ls_split-avere_interno )
-                    tsl          = COND #( WHEN ls_split-dare_esterno <> 0 THEN -1 * ls_split-dare_interno ELSE ls_split-avere_esterno )
-                    currency     = ls_split-currency
-                    ).
+      APPEND VALUE #(
+            awkey           = ls_split-awkey
+            doc_type        = ls_split-doc_type
+            blart_gtran     = p_doct
+            comp_code       = ls_split-comp_code
+            fisc_year       = ls_split-fisc_year
+            ledger          = ls_split-ledger
+            header_txt      = ls_split-header_txt
+            pstng_date      = ls_split-pstng_date
+            doc_date        = ls_split-doc_date
 
-      APPEND <ls_item> TO mt_items.
+            buzei           = <ls_awkey>-buzei
+            gl_account      = ls_split-gl_account
+            item_text       = ls_split-item_text
+            pargb           = ls_split-pargb
+            bus_area        = ls_split-bus_area
+            segment         = ls_split-segment
+            attribuzione    = ls_split-attribuzione
+            par_comp        = ls_split-par_comp
+            int_bank        = ls_split-int_bank
+            account_id      = ls_split-account_id
+            hsl             = COND #( WHEN ls_split-dare_interno <> 0 THEN -1 * ls_split-dare_interno
+                                      ELSE ls_split-avere_interno )
+            tsl             = COND #( WHEN ls_split-dare_esterno <> 0 THEN -1 * ls_split-dare_interno
+                                      ELSE ls_split-avere_esterno )
+            currency        = ls_split-currency
+      ) TO mt_alv_data.
 
     ENDLOOP.
+
+    IF mt_alv_data IS INITIAL .
+      RETURN.
+    ENDIF.
+
+    SELECT parent~saknr AS act_saknr,
+           child~saknr  AS opp_saknr
+      FROM ska1 AS parent
+      JOIN ska1 AS child
+        ON parent~main_saknr        = child~main_saknr
+       AND parent~glaccount_subtype = child~glaccount_subtype
+       AND parent~ktopl             = child~ktopl
+       AND parent~xbilk             = child~xbilk
+       AND parent~glaccount_type    = child~glaccount_type
+
+      JOIN t001
+        ON t001~ktopl = parent~ktopl
+
+      FOR ALL ENTRIES IN @mt_alv_data
+
+      WHERE parent~saknr             = @mt_alv_data-gl_account
+        AND child~saknr             <> @mt_alv_data-gl_account
+        AND t001~bukrs               = @mt_alv_data-comp_code
+        AND parent~glaccount_subtype = 'S'
+        AND parent~xbilk             = 'X'
+        AND parent~glaccount_type    = 'C'
+      INTO TABLE @DATA(lt_ska1).
+    SORT lt_ska1 BY act_saknr.
+
+
+    LOOP AT mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_alv_data>) WHERE int_bank IS NOT INITIAL.
+
+      READ TABLE lt_ska1 ASSIGNING FIELD-SYMBOL(<ls_ska1>)
+         WITH KEY act_saknr = <ls_alv_data>-gl_account BINARY SEARCH.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+      <ls_alv_data>-hkont_gtran = <ls_ska1>-opp_saknr.
+
+    ENDLOOP.
+
+
+    SORT mt_alv_data BY awkey.
 
   ENDMETHOD.                    "EXTRACT_DATA
 
@@ -502,15 +522,21 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              currc  TYPE STANDARD TABLE OF bapiaccr09 WITH DEFAULT KEY,
            END OF ty_post_bapi.
 
+    TYPES: BEGIN OF ty_belnr,
+             buzei TYPE buzei,
+             belnr TYPE belnr_d,
+           END OF ty_belnr.
+
     DATA: lt_selected    TYPE salv_t_row,
           lt_db_item_all TYPE STANDARD TABLE OF zfi_t_icont_tech,
           lt_db_item     TYPE STANDARD TABLE OF zfi_t_icont_tech,
           lt_db_header   TYPE STANDARD TABLE OF zfi_t_hcont_tech,
           ls_db_header   TYPE zfi_t_hcont_tech,
-          ls_db_item     TYPE zfi_t_icont_tech,
           lv_error       TYPE abap_bool,
           lv_obj_key     TYPE bapiache09-obj_key,
-          lt_post_bapi   TYPE STANDARD TABLE OF ty_post_bapi.
+          lt_post_bapi   TYPE STANDARD TABLE OF ty_post_bapi,
+          lr_awkey       TYPE RANGE OF awkey,
+          lt_belnr       TYPE STANDARD TABLE OF ty_belnr.
 
     GET TIME FIELD DATA(lv_uzeit).
 
@@ -526,149 +552,135 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         RETURN.
       ENDIF.
 
-    ELSE.
-      DO lines( mt_header ) TIMES.
-        APPEND sy-index TO lt_selected.
-      ENDDO.
+      LOOP AT lt_selected ASSIGNING FIELD-SYMBOL(<lv_index>).
+        READ TABLE mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_data>) INDEX <lv_index> .
+        IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
+
+        READ TABLE lr_awkey TRANSPORTING NO FIELDS WITH KEY low = <ls_data>-awkey.
+        IF sy-subrc <> 0.
+          APPEND VALUE #( sign = 'I' option = 'EQ' low = <ls_data>-awkey ) TO lr_awkey.
+        ENDIF.
+
+      ENDLOOP.
+
     ENDIF.
 
-    LOOP AT lt_selected ASSIGNING FIELD-SYMBOL(<lv_index>).
-      READ TABLE mt_header ASSIGNING FIELD-SYMBOL(<ls_hdr>) INDEX <lv_index>.
-      IF sy-subrc <> 0.
-        CONTINUE.
-      ENDIF.
+    LOOP AT mt_alv_data ASSIGNING <ls_data>
+      WHERE awkey IN lr_awkey
+      GROUP BY ( awkey = <ls_data>-awkey )
+       ASSIGNING FIELD-SYMBOL(<lg_awkey>).
+
+      CLEAR: lt_db_item, lt_belnr.
 
       SELECT SINGLE @abap_true
         FROM zfi_t_hcont_tech
         INTO @DATA(lv_exists)
-        WHERE awkey = @<ls_hdr>-awkey.
+        WHERE awkey = @<lg_awkey>-awkey.
 
       IF sy-subrc = 0.
 
         APPEND VALUE #( time    = lv_uzeit
-                        awkey   = <ls_hdr>-awkey
+                        awkey   = <lg_awkey>-awkey
                         prog_nr = 1
                         icon    = icon_red_light
                         message = 'Record already exists in the database!'(017)
                         belnr   = lv_obj_key(10)
                       ) TO mt_messages.
 
+
+        LOOP AT GROUP <lg_awkey> ASSIGNING FIELD-SYMBOL(<ls_alv_data>).
+          <ls_alv_data>-status = icon_red_light.
+        ENDLOOP.
+
         CONTINUE.
       ENDIF.
 
       APPEND INITIAL LINE TO lt_post_bapi ASSIGNING FIELD-SYMBOL(<ls_post_bapi_main>).
-      <ls_post_bapi_main>-header = VALUE #(
-                    username     = sy-uname
-                    comp_code    = <ls_hdr>-comp_code
-                    ledger_group = <ls_hdr>-ledger
-                    doc_date     = <ls_hdr>-doc_date
-                    pstng_date   = <ls_hdr>-pstng_date
-                    doc_type     = <ls_hdr>-doc_type
-                    fisc_year    = <ls_hdr>-fisc_year
-                    header_txt   = <ls_hdr>-header_txt
-                    ref_doc_no   = <ls_hdr>-awkey(8) && <ls_hdr>-awkey+10(8)
-                              ).
 
-      SELECT SINGLE ktopl
-        INTO @DATA(lv_ktopl)
-        FROM t001
-        WHERE bukrs = @<ls_hdr>-comp_code.
+      LOOP AT GROUP <lg_awkey> ASSIGNING <ls_alv_data>.
 
-      SELECT parent~saknr AS act_saknr,
-             child~saknr  AS opp_saknr
-        FROM ska1 AS parent
-        JOIN ska1 AS child
-          ON parent~main_saknr        = child~main_saknr
-         AND parent~glaccount_subtype = child~glaccount_subtype
-         AND parent~ktopl             = child~ktopl
-         AND parent~xbilk             = child~xbilk
-         AND parent~glaccount_type    = child~glaccount_type
-        FOR ALL ENTRIES IN @<ls_hdr>-t_items
-        WHERE parent~ktopl             = @lv_ktopl
-          AND parent~saknr             = @<ls_hdr>-t_items-gl_account
-          AND child~saknr             <> @<ls_hdr>-t_items-gl_account
-          AND parent~glaccount_subtype = 'S'
-          AND parent~xbilk             = 'X'
-          AND parent~glaccount_type    = 'C'
-        INTO TABLE @DATA(lt_ska1).
-      SORT lt_ska1 BY act_saknr.
+        IF <ls_post_bapi_main>-header IS INITIAL.
+          <ls_post_bapi_main>-header = VALUE #(
+                        username     = sy-uname
+                        comp_code    = <ls_alv_data>-comp_code
+                        ledger_group = <ls_alv_data>-ledger
+                        doc_date     = <ls_alv_data>-doc_date
+                        pstng_date   = <ls_alv_data>-pstng_date
+                        doc_type     = <ls_alv_data>-doc_type
+                        fisc_year    = <ls_alv_data>-fisc_year
+                        header_txt   = <ls_alv_data>-header_txt
+                        ref_doc_no   = <ls_alv_data>-awkey(8) && <ls_alv_data>-awkey+10(8)
+                                  ).
+        ENDIF.
 
-      CLEAR: lt_db_item.
-      LOOP AT <ls_hdr>-t_items ASSIGNING FIELD-SYMBOL(<ls_items>).
-        DATA(lv_tabix) = sy-tabix.
-
-        APPEND VALUE bapiacgl09(  itemno_acc      = <ls_items>-buzei
-                                  gl_account      = <ls_items>-gl_account
-                                  comp_code       = <ls_hdr>-comp_code
-                                  item_text       = <ls_items>-item_text
-                                  tr_part_ba      = <ls_items>-pargb
-                                  bus_area        = <ls_items>-bus_area
-                                  segment         = <ls_items>-segment
-                                  trade_id        = <ls_items>-par_comp
-                                  housebankid     = <ls_items>-int_bank
-                                  housebankacctid = <ls_items>-account_id
-                                  alloc_nmbr      = <ls_items>-attribuzione
+        APPEND VALUE bapiacgl09(  itemno_acc      = <ls_alv_data>-buzei
+                                  gl_account      = <ls_alv_data>-gl_account
+                                  comp_code       = <ls_alv_data>-comp_code
+                                  item_text       = <ls_alv_data>-item_text
+                                  tr_part_ba      = <ls_alv_data>-pargb
+                                  bus_area        = <ls_alv_data>-bus_area
+                                  segment         = <ls_alv_data>-segment
+                                  trade_id        = <ls_alv_data>-par_comp
+                                  housebankid     = <ls_alv_data>-int_bank
+                                  housebankacctid = <ls_alv_data>-account_id
+                                  alloc_nmbr      = <ls_alv_data>-attribuzione
                                   value_date      = sy-datum
                                   ) TO <ls_post_bapi_main>-items.
 
         APPEND VALUE bapiaccr09(
-                         itemno_acc = <ls_items>-buzei
+                         itemno_acc = <ls_alv_data>-buzei
                          curr_type  = '00'
-                         currency   = <ls_items>-currency
-                         amt_doccur = <ls_items>-hsl
-                         exch_rate  = COND #( WHEN <ls_items>-currency <> 'EUR' THEN <ls_items>-hsl / <ls_items>-tsl
+                         currency   = <ls_alv_data>-currency
+                         amt_doccur = <ls_alv_data>-hsl
+                         exch_rate  = COND #( WHEN <ls_alv_data>-currency <> 'EUR' THEN <ls_alv_data>-hsl / <ls_alv_data>-tsl
                                               ELSE 1 )
                           ) TO <ls_post_bapi_main>-currc ASSIGNING FIELD-SYMBOL(<ls_bapi_accr>).
 
 
-        IF <ls_items>-int_bank IS INITIAL.
-          CONTINUE.
-        ENDIF.
-
-        READ TABLE lt_ska1 ASSIGNING FIELD-SYMBOL(<ls_ska1>)
-          WITH KEY act_saknr = <ls_items>-gl_account BINARY SEARCH.
-        IF sy-subrc <> 0.
+        IF <ls_alv_data>-hkont_gtran IS INITIAL .
           CONTINUE.
         ENDIF.
 
         APPEND INITIAL LINE TO lt_post_bapi ASSIGNING FIELD-SYMBOL(<ls_post>).
-        <ls_post>-buzei  = <ls_items>-buzei.
+        <ls_post>-buzei  = <ls_alv_data>-buzei.
         <ls_post>-header =  VALUE #(
                     username     = sy-uname
-                    comp_code    = <ls_hdr>-comp_code
-                    doc_date     = <ls_hdr>-doc_date
-                    pstng_date   = <ls_hdr>-pstng_date
-                    doc_type     = p_doct
-                    fisc_year    = <ls_hdr>-fisc_year
-                    header_txt   = <ls_hdr>-header_txt
-                    ref_doc_no   = <ls_hdr>-awkey(8) && <ls_hdr>-awkey+10(8)
+                    comp_code    = <ls_alv_data>-comp_code
+                    doc_date     = <ls_alv_data>-doc_date
+                    pstng_date   = <ls_alv_data>-pstng_date
+                    doc_type     = <ls_alv_data>-blart_gtran
+                    fisc_year    = <ls_alv_data>-fisc_year
+                    header_txt   = <ls_alv_data>-header_txt
+                    ref_doc_no   = <ls_alv_data>-awkey(8) && <ls_alv_data>-awkey+10(8)
                               ).
         <ls_post>-items = VALUE #(
 
         (  itemno_acc      = 1
-           gl_account      = <ls_items>-gl_account
-           comp_code       = <ls_hdr>-comp_code
-           item_text       = <ls_items>-item_text
-           tr_part_ba      = <ls_items>-pargb
-           bus_area        = <ls_items>-bus_area
-           segment         = <ls_items>-segment
-           trade_id        = <ls_items>-par_comp
-           housebankid     = <ls_items>-int_bank
-           housebankacctid = <ls_items>-account_id
-           alloc_nmbr      = <ls_items>-attribuzione
+           gl_account      = <ls_alv_data>-gl_account
+           comp_code       = <ls_alv_data>-comp_code
+           item_text       = <ls_alv_data>-item_text
+           tr_part_ba      = <ls_alv_data>-pargb
+           bus_area        = <ls_alv_data>-bus_area
+           segment         = <ls_alv_data>-segment
+           trade_id        = <ls_alv_data>-par_comp
+           housebankid     = <ls_alv_data>-int_bank
+           housebankacctid = <ls_alv_data>-account_id
+           alloc_nmbr      = <ls_alv_data>-attribuzione
            value_date      = sy-datum
          )
          ( itemno_acc      = 2
-           gl_account      = <ls_ska1>-opp_saknr
-           comp_code       = <ls_hdr>-comp_code
-           item_text       = <ls_items>-item_text
-           tr_part_ba      = <ls_items>-pargb
-           bus_area        = <ls_items>-bus_area
-           segment         = <ls_items>-segment
-           trade_id        = <ls_items>-par_comp
-           housebankid     = <ls_items>-int_bank
-           housebankacctid = <ls_items>-account_id
-           alloc_nmbr      = <ls_items>-attribuzione
+           gl_account      = <ls_alv_data>-hkont_gtran
+           comp_code       = <ls_alv_data>-comp_code
+           item_text       = <ls_alv_data>-item_text
+           tr_part_ba      = <ls_alv_data>-pargb
+           bus_area        = <ls_alv_data>-bus_area
+           segment         = <ls_alv_data>-segment
+           trade_id        = <ls_alv_data>-par_comp
+           housebankid     = <ls_alv_data>-int_bank
+           housebankacctid = <ls_alv_data>-account_id
+           alloc_nmbr      = <ls_alv_data>-attribuzione
            value_date      = sy-datum
          ) ).
 
@@ -676,14 +688,14 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         (
           itemno_acc = 1
           curr_type  = '00'
-          currency   = <ls_items>-currency
+          currency   = <ls_alv_data>-currency
           amt_doccur = <ls_bapi_accr>-amt_doccur * -1
           exch_rate  = <ls_bapi_accr>-exch_rate
         )
         (
           itemno_acc = 2
           curr_type  = '00'
-          currency   = <ls_items>-currency
+          currency   = <ls_alv_data>-currency
           amt_doccur = <ls_bapi_accr>-amt_doccur
           exch_rate  = <ls_bapi_accr>-exch_rate
         ) ).
@@ -702,30 +714,18 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             is_head  = <ls_post>-header
             it_glacc = <ls_post>-items
             it_curre = <ls_post>-currc
-            iv_doc   = CONV #( <ls_hdr>-awkey )
+            iv_doc   = CONV #( <ls_post>-header-ref_doc_no )
             iv_buzei = <ls_post>-buzei
           IMPORTING
             ev_err     = lv_error
             ev_obj_key = lv_obj_key
         ).
 
-        DATA(lv_status) = COND icon_d( WHEN lv_error IS INITIAL THEN icon_green_light ELSE icon_red_light ).
-
-        IF <ls_post>-buzei IS INITIAL.
-          <ls_hdr>-status = lv_status.
-          <ls_hdr>-belnr  = lv_obj_key(10).
+        IF <ls_post>-buzei IS NOT INITIAL.
+          APPEND VALUE #( buzei = <ls_post>-buzei
+                          belnr = lv_obj_key(10) ) TO lt_belnr.
         ELSE.
-          READ TABLE mt_items ASSIGNING <ls_items>
-            WITH KEY awkey = <ls_hdr>-awkey
-                     buzei = <ls_post>-buzei.
-          <ls_items>-status = lv_status.
-          <ls_items>-belnr  = lv_obj_key(10).
-
-          READ TABLE <ls_hdr>-t_items ASSIGNING <ls_items>
-            WITH KEY awkey = <ls_hdr>-awkey
-                     buzei = <ls_post>-buzei.
-          <ls_items>-status = lv_status.
-          <ls_items>-belnr  = lv_obj_key(10).
+          DATA(lv_main_belnr) = lv_obj_key(10).
         ENDIF.
 
         IF lv_error IS NOT INITIAL.
@@ -735,44 +735,73 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
       ENDLOOP.
 
-      IF iv_test IS INITIAL AND lv_no_commit IS INITIAL.
+      CLEAR ls_db_header.
+      LOOP AT GROUP <lg_awkey> ASSIGNING <ls_alv_data>.
+        IF lv_no_commit IS NOT INITIAL.
+          <ls_alv_data>-status = icon_red_light.
+          CONTINUE.
+        ENDIF.
+
+        <ls_alv_data>-status = icon_green_light.
+
+        IF iv_test IS NOT INITIAL.
+          CONTINUE.
+        ENDIF.
+
+        <ls_alv_data>-belnr  = lv_main_belnr.
+
+        IF ls_db_header IS INITIAL.
+          ls_db_header = VALUE #(
+              mandt         = sy-mandt
+              awkey         = <ls_alv_data>-awkey
+              bukrs         = <ls_alv_data>-comp_code
+              gjahr         = <ls_alv_data>-fisc_year
+              fins_ledger   = <ls_alv_data>-ledger
+              bktxt         = <ls_alv_data>-header_txt
+              budat         = <ls_alv_data>-pstng_date
+              bldat         = <ls_alv_data>-doc_date
+              belnr         = <ls_alv_data>-belnr
+              blart         = <ls_alv_data>-doc_type
+          ).
+
+          APPEND ls_db_header TO lt_db_header .
+        ENDIF.
+
         APPEND VALUE #(
-            mandt         = sy-mandt
-            awkey         = <ls_hdr>-awkey
-            bukrs         = <ls_hdr>-comp_code
-            gjahr         = <ls_hdr>-fisc_year
-            fins_ledger   = <ls_hdr>-ledger
-            bktxt         = <ls_hdr>-header_txt
-            budat         = <ls_hdr>-pstng_date
-            bldat         = <ls_hdr>-doc_date
-            belnr         = <ls_hdr>-belnr
-            blart         = <ls_hdr>-doc_type
-        ) TO lt_db_header .
+            mandt          = sy-mandt
+            awkey          = <ls_alv_data>-awkey
+            buzei          = <ls_alv_data>-buzei
+            hkont          = <ls_alv_data>-gl_account
+            sgtxt          = <ls_alv_data>-item_text
+            pargb          = <ls_alv_data>-pargb
+            gsber          = <ls_alv_data>-bus_area
+            fb_segment     = <ls_alv_data>-segment
+            dzuonr         = <ls_alv_data>-attribuzione
+            rassc          = <ls_alv_data>-par_comp
+            hbkid          = <ls_alv_data>-int_bank
+            hktid          = <ls_alv_data>-account_id
+            hsl            = <ls_alv_data>-hsl
+            tsl            = <ls_alv_data>-tsl
+            waers          = <ls_alv_data>-currency
+                       ) TO lt_db_item_all ASSIGNING FIELD-SYMBOL(<ls_db_itm>).
 
-        LOOP AT <ls_hdr>-t_items ASSIGNING <ls_items>.
+        IF <ls_alv_data>-hkont_gtran IS INITIAL .
+          CONTINUE.
+        ENDIF.
 
-          APPEND VALUE #(
-                         mandt          = sy-mandt
-                         awkey          = <ls_items>-awkey
-                         buzei          = <ls_items>-buzei
-                         hkont          = <ls_items>-gl_account
-                         sgtxt          = <ls_items>-item_text
-                         pargb          = <ls_items>-pargb
-                         gsber          = <ls_items>-bus_area
-                         fb_segment     = <ls_items>-segment
-                         dzuonr         = <ls_items>-attribuzione
-                         rassc          = <ls_items>-par_comp
-                         hbkid          = <ls_items>-int_bank
-                         hktid          = <ls_items>-account_id
-                         hsl            = <ls_items>-hsl
-                         tsl            = <ls_items>-tsl
-                         waers          = <ls_items>-currency
-                         belnr_gtran    = <ls_items>-belnr
-                         blart_gtran    = COND #( WHEN <ls_items>-belnr IS NOT INITIAL THEN p_doct )
-                         ) TO lt_db_item_all.
+        READ TABLE lt_belnr ASSIGNING FIELD-SYMBOL(<ls_belnr>) WITH KEY buzei = <ls_alv_data>-buzei.
+        IF sy-subrc = 0.
+          <ls_alv_data>-belnr_gtran = <ls_belnr>-belnr.
 
-        ENDLOOP.
+          <ls_db_itm>-belnr_gtran   = <ls_alv_data>-belnr_gtran.
+          <ls_db_itm>-blart_gtran   = <ls_alv_data>-blart_gtran.
+          <ls_db_itm>-hkont_gtran   = <ls_alv_data>-hkont_gtran.
+        ENDIF.
 
+      ENDLOOP.
+
+
+      IF iv_test IS INITIAL AND lv_no_commit IS INITIAL.
         CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
           EXPORTING
             wait = 'X'.
@@ -799,22 +828,6 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
     DATA: lo_columns TYPE REF TO cl_salv_columns,
           lo_column  TYPE REF TO cl_salv_column_list.
 
-    SORT mt_header BY awkey.
-    SORT mt_items  BY awkey buzei.
-
-    LOOP AT mt_items ASSIGNING FIELD-SYMBOL(<ls_items>).
-      READ TABLE mt_header ASSIGNING FIELD-SYMBOL(<ls_hdr>) WITH KEY awkey = <ls_items>-awkey BINARY SEARCH.
-      IF sy-subrc <> 0.
-        CONTINUE.
-      ENDIF.
-
-      APPEND INITIAL LINE TO mt_data ASSIGNING FIELD-SYMBOL(<ls_data>).
-      <ls_data> = CORRESPONDING #( <ls_hdr> ).
-      MOVE-CORRESPONDING <ls_items> TO <ls_data>.
-      <ls_data>-belnr_hdr = <ls_hdr>-belnr.
-      <ls_data>-belnr_itm = <ls_items>-belnr.
-
-    ENDLOOP.
 
     CREATE OBJECT mo_cust_cont
       EXPORTING
@@ -838,7 +851,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
           IMPORTING
             r_salv_table   = mo_salv  " Basis Class Simple ALV Tables
           CHANGING
-            t_table        = mt_data
+            t_table        = mt_alv_data
         ).
       CATCH cx_salv_msg INTO DATA(lx_msg).
         RETURN.
@@ -856,15 +869,26 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         lo_columns = mo_salv->get_columns( ).
         lo_columns->set_optimize( ).
 
-        lo_column ?= lo_columns->get_column( 'BELNR_HDR' ).
+        lo_column ?= lo_columns->get_column( 'BELNR' ).
         lo_column->set_cell_type(
             value = if_salv_c_cell_type=>hotspot
         ).
 
-        lo_column ?= lo_columns->get_column( 'BELNR_ITM' ).
+
+        lo_column ?= lo_columns->get_column( 'BELNR_GTRAN' ).
         lo_column->set_cell_type(
             value = if_salv_c_cell_type=>hotspot
         ).
+
+        IF r3 IS NOT INITIAL.
+          lo_columns->get_column( 'STATUS' )->set_technical( ).
+        ELSE.
+          lo_column ?= lo_columns->get_column( 'STATUS' ).
+          lo_column->set_icon( ).
+          lo_column->set_short_text( value = 'Stato' ).
+          lo_column->set_medium_text( value = 'Stato' ).
+          lo_column->set_long_text( value = 'Stato' ).
+        ENDIF.
 
         lo_columns->get_column( columnname = 'HSL' )->set_currency( value = 'EUR' ).
         lo_columns->get_column( columnname = 'TSL' )->set_currency_column( value = 'CURRENCY' ).
@@ -1022,25 +1046,27 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
   METHOD on_link_click .
 
-    READ TABLE mt_data ASSIGNING FIELD-SYMBOL(<ls_data>) INDEX row.
+    READ TABLE mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_data>) INDEX row.
     IF sy-subrc <> 0.
       RETURN.
     ENDIF.
 
     CASE column.
-      WHEN 'BELNR_HDR'.
+      WHEN 'BELNR'.
         view_belnr(
           EXPORTING
-            iv_belnr = <ls_data>-belnr_hdr
+            iv_belnr = <ls_data>-belnr
             iv_awkey = <ls_data>-awkey
         ).
 
-      WHEN 'BELNR_ITM'.
+      WHEN 'BELNR_GTRAN'.
+
         view_belnr(
           EXPORTING
-            iv_belnr = <ls_data>-belnr_itm
+            iv_belnr = <ls_data>-belnr_gtran
             iv_awkey = <ls_data>-awkey
         ).
+
     ENDCASE.
 
   ENDMETHOD.
@@ -1059,6 +1085,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             iv_belnr = <ls_msg>-belnr
             iv_awkey = <ls_msg>-awkey
         ).
+
     ENDCASE.
 
   ENDMETHOD.
@@ -1081,47 +1108,46 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
   METHOD get_historic_data.
 
-    SELECT @icon_green_light AS status,
-            belnr,
-            awkey,
-            bukrs         AS comp_code,
-            gjahr         AS fisc_year,
-            fins_ledger   AS ledger,
-            bktxt         AS header_txt,
-            budat         AS pstng_date,
-            bldat         AS doc_date,
-            blart         AS doc_type
-      FROM zfi_t_hcont_tech
-      WHERE awkey IN @s_awkey
-        AND bukrs IN @s_bukrs
-        AND gjahr IN @s_gjahr
-        AND budat IN @s_budat
-        AND bldat IN @s_bldat
-        AND blart IN @s_blart
-      INTO CORRESPONDING FIELDS OF TABLE @mt_header.
+    SELECT hdr~awkey,
+           hdr~belnr,
+           hdr~blart          AS doc_type,
 
-    SELECT belnr_gtran AS belnr,
-           awkey,
-           buzei,
-           hkont AS gl_account,
-           sgtxt AS item_text,
-           pargb,
-           gsber AS bus_area,
-           fb_segment AS segment,
-           dzuonr AS attribuzione,
-           rassc  AS par_comp,
-           hbkid  AS int_bank,
-           hktid  AS account_id,
-           hsl,
-           tsl,
-           waers AS currency
+           itm~belnr_gtran,
+           itm~blart_gtran,
+           itm~hkont_gtran,
 
-      FROM zfi_t_icont_tech
-      FOR ALL ENTRIES IN @mt_header
-      WHERE awkey = @mt_header-awkey
-      INTO CORRESPONDING FIELDS OF TABLE @mt_items.
+           hdr~bukrs          AS comp_code,
+           hdr~gjahr          AS fisc_year,
+           hdr~fins_ledger    AS ledger,
+           hdr~bktxt          AS header_txt,
+           hdr~budat          AS pstng_date,
+           hdr~bldat          AS doc_date,
 
-    MODIFY mt_items FROM VALUE #( status = icon_green_light ) TRANSPORTING status WHERE belnr IS NOT INITIAL.
+           itm~buzei,
+           itm~hkont          AS gl_account,
+           itm~sgtxt          AS item_text,
+           itm~pargb,
+           itm~gsber          AS bus_area,
+           itm~fb_segment     AS segment,
+           itm~dzuonr         AS attribuzione,
+           itm~rassc          AS par_comp,
+           itm~hbkid          AS int_bank,
+           itm~hktid          AS account_id,
+           itm~hsl,
+           itm~tsl,
+           itm~waers          AS currency
+
+      FROM zfi_t_hcont_tech AS hdr
+      JOIN zfi_t_icont_tech AS itm
+        ON hdr~awkey = itm~awkey
+      WHERE hdr~awkey IN @s_awkey
+        AND hdr~bukrs IN @s_bukrs
+        AND hdr~gjahr IN @s_gjahr
+        AND hdr~budat IN @s_budat
+        AND hdr~bldat IN @s_bldat
+        AND hdr~blart IN @s_blart
+        INTO CORRESPONDING FIELDS OF TABLE @mt_alv_data.
+
   ENDMETHOD.
 
 ENDCLASS.
@@ -1167,15 +1193,14 @@ START-OF-SELECTION.
 MODULE status_0001 OUTPUT.
   DATA: lt_exclude TYPE TABLE OF syucomm.
 
-  SET PF-STATUS 'PF-STATUS'.
-  SET TITLEBAR 'TB_IVASS'.
-
   IF r3 IS NOT INITIAL.
     APPEND 'FC_SIMU' TO lt_exclude.
     APPEND 'FC_POST' TO lt_exclude.
-
-    SET PF-STATUS 'PF-STATUS' EXCLUDING lt_exclude.
   ENDIF.
+
+  SET TITLEBAR 'TB_IVASS'.
+  SET PF-STATUS 'PF-STATUS' EXCLUDING lt_exclude.
+
 ENDMODULE.
 *&---------------------------------------------------------------------*
 *&      Module  USER_COMMAND_0001  INPUT
