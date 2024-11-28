@@ -357,12 +357,12 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
   ENDMETHOD.
 
-
   METHOD get_batch_input.
 
     DATA : lt_bdcdata  TYPE STANDARD TABLE OF bdcdata,
            lt_messages TYPE STANDARD TABLE OF bdcmsgcoll.
 
+*   Setting options for CALL TRANSACTION
     DATA(ls_options) = VALUE ctu_params(
                           dismode = COND #( WHEN p_prv IS NOT INITIAL THEN 'E' ELSE 'N' )
                           updmode = 'S'
@@ -375,6 +375,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
     DATA(ls_header) = mt_excel_data[ 1 ].
 
+*   Retrieving FIBL RP code based on company code and group from Excel header
     DATA(lt_fibl_rpcode_i) = get_fibl_rp_code(
                                                EXPORTING
                                                  iv_bukrs = ls_header-bukrs
@@ -383,6 +384,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
     DATA(lv_valut) = |{ ls_header-valut+6(2) }{ ls_header-valut+4(2) }{ ls_header-valut(4) }|.
 
+*   Initial BDC data setup
     lt_bdcdata = VALUE #( ( dynbegin = 'T'            fnam   = 'FRFT_B' )
                           ( program  = 'FIBL_FRFT'    dynpro = '0100' dynbegin = 'X' )
                           ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
@@ -390,7 +392,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
                           ( fnam     = 'RNG_GRP-LOW'  fval   = ls_header-rpgroup )
                           ( fnam     = 'RNG_BUK-LOW'  fval   = ls_header-bukrs )
                               ).
-
+*   Loop through Excel data to fill BDC data
     LOOP AT mt_excel_data ASSIGNING FIELD-SYMBOL(<ls_excel_data>) WHERE rwbtr <> 0.
 
       READ TABLE lt_fibl_rpcode_i ASSIGNING FIELD-SYMBOL(<ls_fibl_rpcode_i>)
@@ -399,8 +401,10 @@ CLASS lcl_girofondi IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
+*      Mark FIBL RP code as used
       <ls_fibl_rpcode_i>-used = abap_true.
 
+*      Adding additional BDC steps based on Excel data
       lt_bdcdata = VALUE #( BASE lt_bdcdata
                                 ( program = 'FIBL_FRFT'                   dynpro = '0100'     dynbegin = 'X' )
                                 ( fnam    = 'BDC_OKCODE'                  fval   = '=POSI_RP_B'              )
@@ -416,6 +420,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
     ENDLOOP.
 
+*   Additional BDC steps if p_prv is not set
     IF p_prv IS INITIAL.
 
       lt_bdcdata = VALUE #( BASE lt_bdcdata
@@ -427,17 +432,22 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
     ENDIF.
 
+*   Execute transaction 'FRFT_B'
     CALL TRANSACTION 'FRFT_B' WITH AUTHORITY-CHECK USING lt_bdcdata
                               OPTIONS FROM ls_options.
 
+*   Return if p_prv is set
     IF p_prv IS NOT INITIAL.
       RETURN.
     ENDIF.
 
+*   Commit work
     COMMIT WORK AND WAIT.
 
+*   Remove unused FIBL RP codes
     DELETE lt_fibl_rpcode_i WHERE used IS INITIAL.
 
+*   Get pay request data
     SELECT rpc~rpcode, payrq~rfttrn, MAX( payrq~keyno ) AS keyno
       FROM @lt_fibl_rpcode_i AS rpc
      LEFT JOIN payrq
@@ -450,6 +460,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
       GROUP BY rpc~rpcode, payrq~rfttrn
       INTO TABLE @DATA(lt_payrq).
 
+*   Additional BDC steps if p_pay is not set
     IF p_pay IS NOT INITIAL.
       lt_bdcdata = VALUE #(
           ( dynbegin = 'T'      fnam   = 'FRFT_B' )
@@ -461,6 +472,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
               ).
     ENDIF.
 
+*   Loop through pay request data to fill messages
     LOOP AT lt_payrq ASSIGNING FIELD-SYMBOL(<ls_payrq>).
       APPEND INITIAL LINE TO mt_messages ASSIGNING FIELD-SYMBOL(<ls_msg>).
 
@@ -475,6 +487,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
         DATA(lv_error) = abap_true.
       ENDIF.
 
+*     Additional BDC steps if p_pay is not set
       IF p_pay IS NOT INITIAL.
         lt_bdcdata = VALUE #( BASE lt_bdcdata
                       ( program = 'FIBL_FRFT'                   dynpro = '0100'     dynbegin = 'X' )
@@ -489,26 +502,32 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
     ENDLOOP.
 
+*   Return if any errors occurred or p_req is not set
     IF p_req IS NOT INITIAL OR lv_error IS NOT INITIAL.
       RETURN.
     ENDIF.
 
-
+*   Proceed with pay request
     lt_bdcdata = VALUE #( BASE lt_bdcdata
                             ( program = 'FIBL_FRFT'             dynpro = '0100'     dynbegin = 'X' )
                             ( fnam    = 'BDC_OKCODE'            fval   = '=PAY_PAYRQ' )
                             ).
 
+*   Execute transaction 'FRFT_B'
     CALL TRANSACTION 'FRFT_B' WITH AUTHORITY-CHECK USING lt_bdcdata
                               OPTIONS FROM ls_options.
+
+*   Commit work
     COMMIT WORK AND WAIT.
 
+*   Get pay data
     SELECT prq~keyno, payrq~xrelp
       FROM @lt_payrq AS prq
       JOIN payrq
          ON payrq~keyno = prq~keyno
       INTO TABLE @DATA(lt_payrq_rel).
 
+*   Loop through pay data to fill messages
     LOOP AT lt_payrq_rel ASSIGNING FIELD-SYMBOL(<ls_payrq_rel>).
       APPEND INITIAL LINE TO mt_messages ASSIGNING <ls_msg>.
 
@@ -528,7 +547,6 @@ CLASS lcl_girofondi IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD display_messages.
-
 
     DATA: lo_column TYPE REF TO cl_salv_column_table.
 
