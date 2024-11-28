@@ -42,11 +42,22 @@ CLASS lcl_girofondi DEFINITION.
              waers     TYPE frft_bank_rep-waers,
              rwbtr     TYPE string, "frft_bank_rep-rwbtr,
            END OF ty_excel_data,
-           tt_excel_data  TYPE STANDARD TABLE OF ty_excel_data WITH DEFAULT KEY,
-           tt_fibl_rpcode TYPE STANDARD TABLE OF fibl_rpcode_i WITH DEFAULT KEY.
+           tt_excel_data TYPE STANDARD TABLE OF ty_excel_data WITH DEFAULT KEY.
+
+    TYPES: BEGIN OF ty_fibl_rpcode.
+             INCLUDE TYPE fibl_rpcode_i.
+    TYPES:   used TYPE abap_bool,
+           END OF ty_fibl_rpcode,
+           tt_fibl_rpcode TYPE STANDARD TABLE OF ty_fibl_rpcode WITH DEFAULT KEY.
+
+    TYPES: BEGIN OF ty_messages,
+             icon    TYPE icon-id,
+             message TYPE bapi_msg,
+           END OF ty_messages.
 
     DATA: mt_excel_data TYPE tt_excel_data,
-          mo_salv_msg   TYPE REF TO cl_salv_table.
+          mo_salv_msg   TYPE REF TO cl_salv_table,
+          mt_messages   TYPE STANDARD TABLE OF ty_messages.
 
     METHODS: read_excel_data,
       download_excel,
@@ -226,9 +237,10 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
   METHOD get_fibl_rp_code.
 
-    DATA: lr_bukrs_sel TYPE STANDARD TABLE OF fibl_rpcode_bukrs_sel,
-          lr_group_sel TYPE STANDARD TABLE OF fibl_rpcode_rpcode_sel,
-          lr_ptype_sel TYPE STANDARD TABLE OF fibl_rpcode_ptype_sel.
+    DATA: lr_bukrs_sel   TYPE STANDARD TABLE OF fibl_rpcode_bukrs_sel,
+          lr_group_sel   TYPE STANDARD TABLE OF fibl_rpcode_rpcode_sel,
+          lr_ptype_sel   TYPE STANDARD TABLE OF fibl_rpcode_ptype_sel,
+          lt_fibl_rpcode TYPE STANDARD TABLE OF fibl_rpcode_i.
 
     lr_bukrs_sel = VALUE #( (  sign = 'I' option = 'EQ' bukrs_low = iv_bukrs ) ).
     lr_group_sel = VALUE #( (  sign = 'I' option = 'EQ' rpcode_low = iv_group ) ).
@@ -240,7 +252,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
       TABLES
         it_r_bukrs_sel   = lr_bukrs_sel
         it_r_group_sel   = lr_group_sel
-        et_fibl_rpcode_i = rt_fibl_rpcode
+        et_fibl_rpcode_i = lt_fibl_rpcode
         it_r_ptype_sel   = lr_ptype_sel
       EXCEPTIONS
         not_found        = 1
@@ -251,6 +263,8 @@ CLASS lcl_girofondi IMPLEMENTATION.
       MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
               WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
+
+    rt_fibl_rpcode = CORRESPONDING #( lt_fibl_rpcode ).
   ENDMETHOD.
   METHOD download_excel.
     DATA lo_column TYPE REF TO cl_salv_column_table.
@@ -343,6 +357,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
   ENDMETHOD.
 
+
   METHOD get_batch_input.
 
     DATA : lt_bdcdata  TYPE STANDARD TABLE OF bdcdata,
@@ -366,27 +381,25 @@ CLASS lcl_girofondi IMPLEMENTATION.
                                                  iv_group = ls_header-rpgroup
                                              ).
 
-    ls_header-valut = |{ ls_header-valut+6(2) }{ ls_header-valut+4(2) }{ ls_header-valut(4) }|.
+    DATA(lv_valut) = |{ ls_header-valut+6(2) }{ ls_header-valut+4(2) }{ ls_header-valut(4) }|.
 
     lt_bdcdata = VALUE #( ( dynbegin = 'T'            fnam   = 'FRFT_B' )
                           ( program  = 'FIBL_FRFT'    dynpro = '0100' dynbegin = 'X' )
                           ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
-                          ( fnam     = 'REGUH-VALUT'  fval   = ls_header-valut )
+                          ( fnam     = 'REGUH-VALUT'  fval   = lv_valut )
                           ( fnam     = 'RNG_GRP-LOW'  fval   = ls_header-rpgroup )
                           ( fnam     = 'RNG_BUK-LOW'  fval   = ls_header-bukrs )
                               ).
 
     LOOP AT mt_excel_data ASSIGNING FIELD-SYMBOL(<ls_excel_data>) WHERE rwbtr <> 0.
 
-*      IF sy-tabix > 2.
-*        EXIT.
-*      ENDIF.
-
       READ TABLE lt_fibl_rpcode_i ASSIGNING FIELD-SYMBOL(<ls_fibl_rpcode_i>)
         WITH KEY rpcode = to_upper( <ls_excel_data>-rpcode ).
       IF sy-subrc <> 0.
         CONTINUE.
       ENDIF.
+
+      <ls_fibl_rpcode_i>-used = abap_true.
 
       lt_bdcdata = VALUE #( BASE lt_bdcdata
                                 ( program = 'FIBL_FRFT'                   dynpro = '0100'     dynbegin = 'X' )
@@ -399,114 +412,158 @@ CLASS lcl_girofondi IMPLEMENTATION.
                                 ( fnam    = 'FRFT_BANK_REP-RWBTR(01)'     fval   = <ls_excel_data>-rwbtr     )
                                 ( fnam    = 'FRFT_BANK_REP-PAYMT_REF(01)' fval   = <ls_excel_data>-paymt_ref )
                                 ( fnam    = 'FRFT_BANK_REP-XPORE(01)'     fval   = 'X'                       )
-
                                 ).
 
     ENDLOOP.
 
-    IF p_req = abap_true." OR p_pay = abap_true.
+    IF p_prv IS INITIAL.
 
       lt_bdcdata = VALUE #( BASE lt_bdcdata
                           ( program = 'FIBL_FRFT'           dynpro = '0100'     dynbegin = 'X' )
                           ( fnam    = 'BDC_OKCODE'          fval   = '=POST_PRQ'               )
                           ( program = 'SAPLSBAL_DISPLAY'    dynpro = '0200'     dynbegin = 'X' )
                           ( fnam    = 'BDC_OKCODE'          fval   = '=&ONT'                   )
-                          ( program = 'FIBL_FRFT'           dynpro = '0100'     dynbegin = 'X' )
-                          ( fnam    = 'BDC_OKCODE'          fval   = '/EZUR'                   )
                           ).
 
     ENDIF.
 
-    IF p_pay = abap_true.
+    CALL TRANSACTION 'FRFT_B' WITH AUTHORITY-CHECK USING lt_bdcdata
+                              OPTIONS FROM ls_options.
 
-      TYPES: BEGIN OF ty_lcl,
-               keyno  TYPE prq_keyno,
-               rfttrn TYPE rfttrn_bf,
-             END OF ty_lcl.
-      DATA: lt_pay TYPE STANDARD TABLE OF ty_lcl.
+    IF p_prv IS NOT INITIAL.
+      RETURN.
+    ENDIF.
 
-      LOOP AT mt_excel_data ASSIGNING <ls_excel_data>.
-        <ls_excel_data>-rpcode = to_upper( <ls_excel_data>-rpcode ).
+    COMMIT WORK AND WAIT.
 
-*        IF <ls_excel_data>-rpcode <> 'E_D01627248_BPNALLEG'
-*        AND <ls_excel_data>-rpcode <> 'E_D01627231_BILAN.TO'.
-*          CONTINUE.
-*        ENDIF.
+    DELETE lt_fibl_rpcode_i WHERE used IS INITIAL.
 
-        SELECT SINGLE
-          MAX( keyno ) AS keyno,
-               rfttrn
-       FROM payrq
-       WHERE valut  =  @<ls_excel_data>-valut
-         AND zbukr  =  @<ls_excel_data>-bukrs
-         AND rfttrn =  @<ls_excel_data>-rpcode
-         AND wrbtr  =  @<ls_excel_data>-rwbtr
-         AND xreve  <> @abap_true
-         AND xrelp  <> @abap_true
-         GROUP BY  rfttrn
-         INTO @DATA(ls_pay).
+    SELECT rpc~rpcode, payrq~rfttrn, MAX( payrq~keyno ) AS keyno
+      FROM @lt_fibl_rpcode_i AS rpc
+     LEFT JOIN payrq
+         ON payrq~rfttrn = rpc~rpcode
+        AND payrq~valut  = @ls_header-valut
+        AND payrq~zbukr  = @ls_header-bukrs
+        AND payrq~usnam  = @sy-uname
+        AND payrq~cpudt  = @sy-datum
 
-        IF sy-subrc = 0.
-          APPEND ls_pay TO lt_pay.
-          CLEAR ls_pay.
-        ENDIF.
-      ENDLOOP.
+      GROUP BY rpc~rpcode, payrq~rfttrn
+      INTO TABLE @DATA(lt_payrq).
 
-      CLEAR: lt_bdcdata.
+    IF p_pay IS NOT INITIAL.
+      lt_bdcdata = VALUE #(
+          ( dynbegin = 'T'      fnam   = 'FRFT_B' )
+          ( program  = 'FIBL_FRFT'    dynpro = '0100'   dynbegin = 'X' )
+          ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
+          ( fnam     = 'REGUH-VALUT'  fval   = lv_valut )
+          ( fnam     = 'RNG_GRP-LOW'  fval   = ls_header-rpgroup )
+          ( fnam     = 'RNG_BUK-LOW'  fval   = ls_header-bukrs )
+              ).
+    ENDIF.
 
-      lt_bdcdata = VALUE #( ( dynbegin = 'T'      fnam   = 'FRFT_B' )
-                      ( program  = 'FIBL_FRFT'    dynpro = '0100'   dynbegin = 'X' )
-                      ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
-                      ( fnam     = 'REGUH-VALUT'  fval   = ls_header-valut )
-                      ( fnam     = 'RNG_GRP-LOW'  fval   = ls_header-rpgroup )
-                      ( fnam     = 'RNG_BUK-LOW'  fval   = ls_header-bukrs )
-                          ).
+    LOOP AT lt_payrq ASSIGNING FIELD-SYMBOL(<ls_payrq>).
+      APPEND INITIAL LINE TO mt_messages ASSIGNING FIELD-SYMBOL(<ls_msg>).
 
-      LOOP AT lt_pay ASSIGNING FIELD-SYMBOL(<ls_pay>).
+      DATA(lv_key) = |{ <ls_payrq>-keyno ALPHA = OUT }|.
 
-        <ls_pay>-keyno =  |{ <ls_pay>-keyno ALPHA = OUT }|.
+      IF <ls_payrq>-rfttrn IS NOT INITIAL.
+        <ls_msg>-icon = icon_green_light.
+        MESSAGE s068(fibl_rpcode) WITH lv_key <ls_payrq>-rpcode INTO <ls_msg>-message.
+      ELSE.
+        <ls_msg>-icon = icon_red_light.
+        MESSAGE e026(fibl_rpcode) WITH <ls_payrq>-rpcode '' ls_header-bukrs INTO <ls_msg>-message.
+        DATA(lv_error) = abap_true.
+      ENDIF.
 
+      IF p_pay IS NOT INITIAL.
         lt_bdcdata = VALUE #( BASE lt_bdcdata
                       ( program = 'FIBL_FRFT'                   dynpro = '0100'     dynbegin = 'X' )
                       ( fnam    = 'BDC_OKCODE'                  fval   = '=POSI_PQ' )
                       ( program = 'FIBL_FRFT'                   dynpro = '0300'     dynbegin = 'X' )
                       ( fnam    = 'BDC_OKCODE'                  fval   = '=ENTER' )
-                      ( fnam    = 'SEARCH_VALUE'                fval   = <ls_pay>-keyno )
+                      ( fnam    = 'SEARCH_VALUE'                fval   = lv_key )
                       ( program = 'FIBL_FRFT'                   dynpro = '0100'     dynbegin = 'X' )
-                      ( fnam    = 'BDC_OKCODE'                  fval   = '=PAY_PAYRQ' )
                       ( fnam    = 'FRFT_PAYRQ-MARK_ROW(01)'     fval   = 'X' )
                         ).
+      ENDIF.
 
-      ENDLOOP.
-      lt_bdcdata = VALUE #( BASE lt_bdcdata
-                              ( program = 'SAPLSBAL_DISPLAY'    dynpro = '0200'     dynbegin = 'X' )
-                              ( fnam    = 'BDC_OKCODE'          fval   = '=&ONT' )
-                              ( program = 'FIBL_FRFT'           dynpro = '0100'     dynbegin = 'X' )
-                              ( fnam    = 'BDC_OKCODE'          fval   = '/EZUR' )
-                              ).
+    ENDLOOP.
+
+    IF p_req IS NOT INITIAL OR lv_error IS NOT INITIAL.
+      RETURN.
     ENDIF.
 
+
+    lt_bdcdata = VALUE #( BASE lt_bdcdata
+                            ( program = 'FIBL_FRFT'             dynpro = '0100'     dynbegin = 'X' )
+                            ( fnam    = 'BDC_OKCODE'            fval   = '=PAY_PAYRQ' )
+                            ).
+
     CALL TRANSACTION 'FRFT_B' WITH AUTHORITY-CHECK USING lt_bdcdata
-                          OPTIONS FROM ls_options
-                          MESSAGES INTO lt_messages.
+                              OPTIONS FROM ls_options.
+    COMMIT WORK AND WAIT.
+
+    SELECT prq~keyno, payrq~xrelp
+      FROM @lt_payrq AS prq
+      JOIN payrq
+         ON payrq~keyno = prq~keyno
+      INTO TABLE @DATA(lt_payrq_rel).
+
+    LOOP AT lt_payrq_rel ASSIGNING FIELD-SYMBOL(<ls_payrq_rel>).
+      APPEND INITIAL LINE TO mt_messages ASSIGNING <ls_msg>.
+
+      DATA(lv_key_rel) = |{ <ls_payrq_rel>-keyno ALPHA = OUT }|.
+
+      IF <ls_payrq_rel>-xrelp IS NOT INITIAL.
+        <ls_msg>-icon = icon_green_light.
+        MESSAGE s071(fibl_rpcode) WITH lv_key_rel INTO <ls_msg>-message.
+
+      ELSE.
+        <ls_msg>-icon = icon_red_light.
+        <ls_msg>-message = |{ TEXT-010 } { lv_key_rel } { TEXT-011 }|.
+      ENDIF.
+
+    ENDLOOP.
+
   ENDMETHOD.
 
   METHOD display_messages.
 
-*    TRY.
-*        cl_salv_table=>factory(
-*          IMPORTING
-*            r_salv_table = mo_salv_msg
-*          CHANGING
-*            t_table      = mt_messages ).
-*      CATCH cx_salv_msg INTO DATA(lx_msg).
-*        MESSAGE lx_msg->get_longtext( ) TYPE 'S' DISPLAY LIKE 'E'.
-*        LEAVE LIST-PROCESSING.?
-*    ENDTRY.
-*
-*    mo_salv_msg->get_functions( )->set_all( 'X' ).
-*
-*    mo_salv_msg->display( ).
+
+    DATA: lo_column TYPE REF TO cl_salv_column_table.
+
+    IF p_prv IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING
+            r_salv_table = mo_salv_msg
+          CHANGING
+            t_table      = mt_messages ).
+      CATCH cx_salv_msg INTO DATA(lx_msg).
+        MESSAGE lx_msg->get_longtext( ) TYPE 'S' DISPLAY LIKE 'E'.
+        LEAVE LIST-PROCESSING.
+    ENDTRY.
+
+    mo_salv_msg->get_functions( )->set_all( 'X' ).
+
+
+    DATA(lo_cols) = mo_salv_msg->get_columns( ).
+    lo_cols->set_optimize(  ).
+
+    TRY.
+        DATA(lv_text) = CONV scrtext_s( 'Status'(012) ).
+        lo_column ?= lo_cols->get_column( 'ICON' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+        lo_column->set_icon( ).
+      CATCH cx_salv_not_found.
+    ENDTRY.
+
+    mo_salv_msg->display( ).
 
   ENDMETHOD.
 
