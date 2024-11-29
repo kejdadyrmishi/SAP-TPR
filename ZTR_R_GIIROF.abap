@@ -8,17 +8,17 @@ REPORT ztr_r_giirof.
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   PARAMETERS: p_upl  RADIOBUTTON GROUP rb1 USER-COMMAND u01 DEFAULT 'X',
               p_dwl  RADIOBUTTON GROUP rb1,
-              p_file TYPE string.
+              p_file TYPE string MODIF ID bl1.
 SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
-  PARAMETERS: p_prv RADIOBUTTON GROUP rb2  DEFAULT 'X' MODIF ID bl1,
+  PARAMETERS: p_prv RADIOBUTTON GROUP rb2 DEFAULT 'X' MODIF ID bl1,
               p_req RADIOBUTTON GROUP rb2 MODIF ID bl1,
               p_pay RADIOBUTTON GROUP rb2 MODIF ID bl1.
 SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
-  PARAMETERS: p_gruppo TYPE rpgroup MODIF ID bl2,
+  PARAMETERS: p_gruppo TYPE fibl_rpcode_grou-rpgroup MODIF ID bl2,
               p_bukrs  TYPE bukrs MODIF ID bl2,
               p_valut  TYPE valut MODIF ID bl2.
 SELECTION-SCREEN END OF BLOCK b3.
@@ -74,13 +74,13 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
   METHOD execute.
 
-    IF p_file IS INITIAL .
-      MESSAGE 'Please, enter a file name first!'(004) TYPE 'S' DISPLAY LIKE 'E'.
-      RETURN.
-    ENDIF.
-
     CASE abap_true.
       WHEN p_upl.
+
+        IF p_file IS INITIAL .
+          MESSAGE 'Please, enter a file name first!'(004) TYPE 'S' DISPLAY LIKE 'E'.
+          RETURN.
+        ENDIF.
 
         read_excel_data( ).
         get_batch_input( ).
@@ -267,7 +267,13 @@ CLASS lcl_girofondi IMPLEMENTATION.
     rt_fibl_rpcode = CORRESPONDING #( lt_fibl_rpcode ).
   ENDMETHOD.
   METHOD download_excel.
-    DATA lo_column TYPE REF TO cl_salv_column_table.
+    DATA :lo_column   TYPE REF TO cl_salv_column_table,
+          lv_filename TYPE string,
+          lv_path     TYPE string,
+          lv_fullpath TYPE string,
+          lv_action   TYPE i,
+          lt_raw_data TYPE xml_rawdata,
+          lv_size     TYPE i.
 
     DATA(lt_fibl_rpcode_i) = get_fibl_rp_code(
                                EXPORTING
@@ -299,7 +305,6 @@ CLASS lcl_girofondi IMPLEMENTATION.
     lo_cols->set_optimize(  ).
 
     TRY.
-
         DATA(lv_text) = CONV string( 'Company Code'(009) ).
         lo_column ?= lo_cols->get_column( 'BUKRS' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
@@ -315,44 +320,81 @@ CLASS lcl_girofondi IMPLEMENTATION.
     ENDTRY.
 
     DATA(lv_xml) = lo_salv->to_xml( xml_type = if_salv_bs_xml=>c_type_xlsx ).
-    DATA(lt_xstring) = cl_bcs_convert=>xstring_to_solix( iv_xstring = lv_xml ).
 
-    cl_gui_frontend_services=>gui_download(
-      EXPORTING
-        bin_filesize              = xstrlen( lv_xml )
-        filename                  = p_file
-        filetype                  = 'BIN'
-      CHANGING
-        data_tab                  = lt_xstring                      " Transfer table
-      EXCEPTIONS
-        file_write_error          = 1                    " Cannot write to file
-        no_batch                  = 2                    " Cannot execute front-end function in background
-        gui_refuse_filetransfer   = 3                    " Incorrect Front End
-        invalid_type              = 4                    " Invalid value for parameter FILETYPE
-        no_authority              = 5                    " No Download Authorization
-        unknown_error             = 6                    " Unknown error
-        header_not_allowed        = 7                    " Invalid header
-        separator_not_allowed     = 8                    " Invalid separator
-        filesize_not_allowed      = 9                    " Invalid file size
-        header_too_long           = 10                   " Header information currently restricted to 1023 bytes
-        dp_error_create           = 11                   " Cannot create DataProvider
-        dp_error_send             = 12                   " Error Sending Data with DataProvider
-        dp_error_write            = 13                   " Error Writing Data with DataProvider
-        unknown_dp_error          = 14                   " Error when calling data provider
-        access_denied             = 15                   " Access to file denied.
-        dp_out_of_memory          = 16                   " Not enough memory in data provider
-        disk_full                 = 17                   " Storage medium is full.
-        dp_timeout                = 18                   " Data provider timeout
-        file_not_found            = 19                   " Could not find file
-        dataprovider_exception    = 20                   " General Exception Error in DataProvider
-        control_flush_error       = 21                   " Error in Control Framework
-        not_supported_by_gui      = 22                   " GUI does not support this
-        error_no_gui              = 23                   " GUI not available
-        OTHERS                    = 24
-    ).
-    IF sy-subrc <> 0.
-      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
-        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    IF xstrlen( lv_xml ) > 0.
+
+      cl_gui_frontend_services=>file_save_dialog(
+        EXPORTING
+          default_extension         = 'xlsx'    " Default Extension
+          default_file_name         = 'GirofondiTemplate.xlsx'   " Default File Name
+          file_filter               = cl_gui_frontend_services=>filetype_excel  " File Type Filter Table
+          prompt_on_overwrite       = 'X'
+        CHANGING
+          filename                  = lv_filename     " File Name to Save
+          path                      = lv_path   " Path to File
+          fullpath                  = lv_fullpath   " Path + File Name
+        EXCEPTIONS
+          cntl_error                = 1
+          error_no_gui              = 2
+          not_supported_by_gui      = 3
+          invalid_default_file_name = 4
+          OTHERS                    = 5
+      ).
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                   WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+      IF lv_action EQ cl_gui_frontend_services=>action_ok.
+
+        cl_scp_change_db=>xstr_to_xtab(
+          EXPORTING
+            im_xstring = lv_xml    " XSTRING
+          IMPORTING
+            ex_xtab    = lt_raw_data   " Table of Type X
+            ex_size    = lv_size    " Size of XSTRING
+        ).
+
+      ENDIF.
+
+      cl_gui_frontend_services=>gui_download(
+        EXPORTING
+          bin_filesize              = xstrlen( lv_xml )
+          filename                  = lv_filename
+          filetype                  = 'BIN'
+        CHANGING
+          data_tab                  = lt_raw_data                       " Transfer table
+        EXCEPTIONS
+          file_write_error          = 1                    " Cannot write to file
+          no_batch                  = 2                    " Cannot execute front-end function in background
+          gui_refuse_filetransfer   = 3                    " Incorrect Front End
+          invalid_type              = 4                    " Invalid value for parameter FILETYPE
+          no_authority              = 5                    " No Download Authorization
+          unknown_error             = 6                    " Unknown error
+          header_not_allowed        = 7                    " Invalid header
+          separator_not_allowed     = 8                    " Invalid separator
+          filesize_not_allowed      = 9                    " Invalid file size
+          header_too_long           = 10                   " Header information currently restricted to 1023 bytes
+          dp_error_create           = 11                   " Cannot create DataProvider
+          dp_error_send             = 12                   " Error Sending Data with DataProvider
+          dp_error_write            = 13                   " Error Writing Data with DataProvider
+          unknown_dp_error          = 14                   " Error when calling data provider
+          access_denied             = 15                   " Access to file denied.
+          dp_out_of_memory          = 16                   " Not enough memory in data provider
+          disk_full                 = 17                   " Storage medium is full.
+          dp_timeout                = 18                   " Data provider timeout
+          file_not_found            = 19                   " Could not find file
+          dataprovider_exception    = 20                   " General Exception Error in DataProvider
+          control_flush_error       = 21                   " Error in Control Framework
+          not_supported_by_gui      = 22                   " GUI does not support this
+          error_no_gui              = 23                   " GUI not available
+          OTHERS                    = 24
+      ).
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
     ENDIF.
 
   ENDMETHOD.
@@ -368,7 +410,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
                           updmode = 'S'
                           cattmode = 'N'
                           defsize = 'X'
-                          racommit = COND #( WHEN p_prv IS NOT INITIAL THEN ' ' ELSE 'X')
+                          racommit = 'X'
 *                              NOBINPT = 'X'
 *                              NOBIEND
                           ).
@@ -386,7 +428,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 
 *   Initial BDC data setup
     lt_bdcdata = VALUE #( ( dynbegin = 'T'            fnam   = 'FRFT_B' )
-                          ( program  = 'FIBL_FRFT'    dynpro = '0100' dynbegin = 'X' )
+                          ( program  = 'FIBL_FRFT'    dynpro = '0100'   dynbegin = 'X' )
                           ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
                           ( fnam     = 'REGUH-VALUT'  fval   = lv_valut )
                           ( fnam     = 'RNG_GRP-LOW'  fval   = ls_header-rpgroup )
@@ -463,7 +505,7 @@ CLASS lcl_girofondi IMPLEMENTATION.
 *   Additional BDC steps if p_pay is not set
     IF p_pay IS NOT INITIAL.
       lt_bdcdata = VALUE #(
-          ( dynbegin = 'T'      fnam   = 'FRFT_B' )
+          ( dynbegin = 'T'            fnam   = 'FRFT_B' )
           ( program  = 'FIBL_FRFT'    dynpro = '0100'   dynbegin = 'X' )
           ( fnam     = 'BDC_OKCODE'   fval   = '=ENTER' )
           ( fnam     = 'REGUH-VALUT'  fval   = lv_valut )
@@ -566,7 +608,6 @@ CLASS lcl_girofondi IMPLEMENTATION.
     ENDTRY.
 
     mo_salv_msg->get_functions( )->set_all( 'X' ).
-
 
     DATA(lo_cols) = mo_salv_msg->get_columns( ).
     lo_cols->set_optimize(  ).
