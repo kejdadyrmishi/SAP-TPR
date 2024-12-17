@@ -289,7 +289,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
           lv_skip_itm     TYPE i VALUE 0.
 
     cl_gui_frontend_services=>gui_upload(
-EXPORTING
+      EXPORTING
         filename = p_file
         filetype = 'ASC'
       CHANGING
@@ -390,19 +390,25 @@ EXPORTING
           TRANSLATE ls_split-wrhab USING ',.'.
 
           TYPES: BEGIN OF ty_glacc,
-                   z_cont_alt       TYPE z_cont_alt,
+                   z_esolver_acc    TYPE z_esolver_acc,
                    z_cont_operativo TYPE z_cont_operativo,
                  END OF ty_glacc.
-          DATA: lt_glacc TYPE SORTED TABLE OF ty_glacc WITH UNIQUE KEY z_cont_alt.
+          DATA: lt_glacc TYPE SORTED TABLE OF ty_glacc WITH UNIQUE KEY z_esolver_acc,
+                lv_hkont TYPE c LENGTH 10.
 
-          READ TABLE lt_glacc TRANSPORTING NO FIELDS WITH TABLE KEY z_cont_alt =  ls_split-hkont.
+          lv_hkont = |{ ls_split-hkont ALPHA = IN }|.
+
+          READ TABLE lt_glacc TRANSPORTING NO FIELDS WITH TABLE KEY z_esolver_acc = lv_hkont.
           IF sy-subrc <> 0.
-            INSERT VALUE #( z_cont_alt = ls_split-hkont ) INTO TABLE lt_glacc ASSIGNING FIELD-SYMBOL(<ls_glacc>).
+
+            lv_hkont = to_upper( lv_hkont ).
+
+            INSERT VALUE #( z_esolver_acc = lv_hkont ) INTO TABLE lt_glacc ASSIGNING FIELD-SYMBOL(<ls_glacc>).
 
             SELECT SINGLE z_cont_operativo
               FROM zfi_sofia_cont
               INTO <ls_glacc>-z_cont_operativo
-              WHERE z_cont_alt = ls_split-hkont.
+              WHERE z_esolver_acc = lv_hkont.
 
             IF <ls_glacc>-z_cont_operativo IS INITIAL.
 
@@ -411,7 +417,7 @@ EXPORTING
                 xblnr   = ls_split-xblnr
                 buzei   = 1
                 icon    =  icon_red_light
-                message = |Errore durante la trascodifica del conto { ls_split-hkont }|
+                message = |Errore durante la trascodifica del conto { lv_hkont }|
                  ) TO mt_messages.
 
               lv_error = abap_true.
@@ -434,7 +440,7 @@ EXPORTING
                           xmwst       = ls_split-xmwst
                           prog_nr_itm = ls_split-prog_nr_itm
                           bukrs_itm   = ls_split-bukrs_itm
-                          hkont       = <ls_glacc>-z_cont_operativo
+                          hkont       = to_upper( <ls_glacc>-z_cont_operativo )
                           sgtxt       = ls_split-sgtxt
                           wrsol       = ls_split-wrsol
                           wrhab       = ls_split-wrhab
