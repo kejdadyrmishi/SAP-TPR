@@ -223,15 +223,9 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
               WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
 
-    IF strlen( lv_fname ) <> 17.
-      lv_error = abap_true.
-      RETURN.
-    ENDIF.
-
-    IF ( lv_fname(6) <> 'SOFIA_' )                     OR
+    IF ( lv_fname(6) <> 'SOFIA_' ) OR
        ( lv_fname+6(4)  NOT BETWEEN '0000' AND '9999' ) OR
-       ( lv_fname+11(2) NOT BETWEEN '01'   AND '12' )   OR
-       ( lv_fname+13 <> '.CSV' ).
+       ( lv_fname+11(2) NOT BETWEEN '01'   AND '12'  ).
       lv_error = abap_true.
     ENDIF.
 
@@ -322,6 +316,10 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
     ENDIF.
 
     LOOP AT lt_strings ASSIGNING FIELD-SYMBOL(<ls_strings>) FROM 4.
+
+*      IF <ls_strings> IS INITIAL.
+*        CONTINUE.
+*      ENDIF.
 
       IF <ls_strings> NP ';*'.
         lv_skip_itm = 8.
@@ -440,7 +438,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                           xmwst       = ls_split-xmwst
                           prog_nr_itm = ls_split-prog_nr_itm
                           bukrs_itm   = ls_split-bukrs_itm
-                          hkont       = to_upper( <ls_glacc>-z_cont_operativo )
+                          hkont       = <ls_glacc>-z_cont_operativo
                           sgtxt       = ls_split-sgtxt
                           wrsol       = ls_split-wrsol
                           wrhab       = ls_split-wrhab
