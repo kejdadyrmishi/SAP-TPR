@@ -30,7 +30,7 @@ CLASS lcl_hier DEFINITION FINAL.
       free_selection,
       edit_mode IMPORTING iv_call TYPE abap_bool OPTIONAL.
 
-    METHODS : go_source_code,
+    METHODS : get_source_code,
       close_docking.
 
   PRIVATE SECTION.
@@ -46,6 +46,7 @@ CLASS lcl_hier DEFINITION FINAL.
           mt_desc        TYPE tt_desc,
           mo_dock        TYPE REF TO cl_gui_docking_container,
           mo_grid        TYPE REF TO cl_gui_alv_grid,
+          mo_class       TYPE REF TO cl_gui_alv_grid,
           mv_changed     TYPE abap_bool,
           mo_cont        TYPE REF TO cl_gui_custom_container,
           mo_top_of_page TYPE REF TO cl_dd_document,
@@ -363,43 +364,66 @@ CLASS lcl_hier IMPLEMENTATION.
 
     IF sy-subrc = 0.
 
-      IF mo_text_edit IS INITIAL.
-        CREATE OBJECT mo_text_edit
-          EXPORTING
-            parent = mo_bottom_area.
-      ENDIF.
-
-      mo_text_edit->set_visible( EXPORTING visible = abap_true ).
-      IF mo_grid IS NOT INITIAL.
-        mo_grid->set_visible( EXPORTING visible = abap_false ).
-        CLEAR: mv_tabname.
-      ENDIF.
-
       mv_program = mv_name.
 
-      READ REPORT mv_program INTO mt_source.
+      IF mv_program IS INITIAL.
+        MESSAGE 'No program selected.' TYPE 'S' DISPLAY LIKE 'E'.
+        RETURN.
+      ENDIF.
 
-      mo_text_edit->set_text( mt_source ). " Update text editor
+      EDITOR-CALL FOR REPORT mv_program DISPLAY-MODE.
 
-      DATA(it_source_code_out) = VALUE stringtab( ).
-      CALL FUNCTION 'PRETTY_PRINTER'
-        EXPORTING
-          inctoo             = space
-        TABLES
-          ntext              = it_source_code_out
-          otext              = mt_source
-        EXCEPTIONS
-          enqueue_table_full = 1
-          include_enqueued   = 2
-          include_readerror  = 3
-          include_writeerror = 4
-          OTHERS             = 5.
-
-      mo_text_edit->set_readonly_mode( 1 ).
-*      mo_text_edit->set_toolbar_mode( cl_gui_abapedit=>true ).
-      mo_text_edit->set_text( it_source_code_out ).  " Update text editor
-
-      mo_top_of_page->initialize_document( ).
+*      IF mo_text_edit IS INITIAL.
+*        CREATE OBJECT mo_text_edit
+*          EXPORTING
+*            parent = mo_bottom_area.
+*      ENDIF.
+*
+*      mo_text_edit->set_visible( EXPORTING visible = abap_true ).
+*
+*      IF mo_grid IS NOT INITIAL AND mo_class IS NOT INITIAL.
+*        mo_grid->set_visible( EXPORTING visible = abap_false ).
+*        mo_class->set_visible( EXPORTING visible = abap_false ).
+*        CLEAR: mv_tabname, mv_classname.
+*
+*      ELSEIF mo_grid IS NOT INITIAL.
+*        mo_grid->set_visible( EXPORTING visible = abap_false ).
+*        CLEAR: mv_tabname.
+*
+*      ELSEIF mo_class IS NOT INITIAL.
+*        mo_class->set_visible( EXPORTING visible = abap_false ).
+*        CLEAR: mv_classname.
+*
+*      ELSE.
+*        mo_text_edit->set_visible( EXPORTING visible = abap_false ).
+*      ENDIF.
+*
+*      mv_program = mv_name.
+*
+*      READ REPORT mv_program INTO mt_source.
+*
+*      mo_text_edit->set_text( mt_source ). " Update text editor
+*
+**      SET HANDLER top_of_page FOR mo_text_edit.
+*
+*      DATA(it_source_code_out) = VALUE stringtab( ).
+*      CALL FUNCTION 'PRETTY_PRINTER'
+*        EXPORTING
+*          inctoo             = space
+*        TABLES
+*          ntext              = it_source_code_out
+*          otext              = mt_source
+*        EXCEPTIONS
+*          enqueue_table_full = 1
+*          include_enqueued   = 2
+*          include_readerror  = 3
+*          include_writeerror = 4
+*          OTHERS             = 5.
+*
+*      mo_text_edit->set_readonly_mode( 1 ).
+*      mo_text_edit->set_text( it_source_code_out ).  " Update text editor
+*
+*      mo_top_of_page->initialize_document( ).
 *      mo_text_edit->list_processing_events(
 *           EXPORTING
 *             i_event_name = 'TOP_OF_PAGE'
@@ -433,9 +457,22 @@ CLASS lcl_hier IMPLEMENTATION.
         ENDIF.
 
         mo_grid->set_visible( EXPORTING visible = abap_true ).
-        IF mo_text_edit IS NOT INITIAL.
+
+        IF mo_text_edit IS NOT INITIAL AND mo_class IS NOT INITIAL.
           mo_text_edit->set_visible( EXPORTING visible = abap_false ).
-          CLEAR mv_program.
+          mo_class->set_visible( EXPORTING visible = abap_false ).
+          CLEAR: mv_program, mv_classname.
+
+        ELSEIF mo_text_edit IS NOT INITIAL.
+          mo_text_edit->set_visible( EXPORTING visible = abap_false ).
+          CLEAR: mv_program.
+
+        ELSEIF mo_class IS NOT INITIAL.
+          mo_class->set_visible( EXPORTING visible = abap_false ).
+          CLEAR: mv_classname.
+
+        ELSE.
+          mo_grid->set_visible( EXPORTING visible = abap_false ).
         ENDIF.
 
         CLEAR lt_fieldcat.
@@ -543,58 +580,131 @@ CLASS lcl_hier IMPLEMENTATION.
       SELECT SINGLE 1 INTO @lv_exist FROM seoclass WHERE clsname = @mv_name.
       IF sy-subrc = 0.
 
-        DATA:    lt_class_info   TYPE STANDARD TABLE OF seoc_class_r,
+        DATA:    lt_class_info   TYPE  seoc_class_r,
                  lv_html_content TYPE string.
+
+        DATA:  it_methods     TYPE abap_methdescr_tab,
+               wa_methods     TYPE abap_methdescr,
+               lt_displaymeth TYPE TABLE OF abap_methdescr,
+               lo_class_descr TYPE REF TO cl_abap_classdescr.
 
         mv_classname = mv_name.
 
-        CALL FUNCTION 'SEO_CLASS_READ'
-          EXPORTING
-            clskey                       = CONV seoclskey( mv_classname )
-            version                      = seoc_version_active
-            master_language              = sy-langu
-            modif_language               = sy-langu
-            description_bypassing_buffer = abap_false
-          IMPORTING
-            class                        = lt_class_info.
-
-
-        IF lo_class_view IS INITIAL.
-          CREATE OBJECT lo_class_view
-            EXPORTING
-              parent = mo_bottom_area.
-        ENDIF.
-
-
-*        CALL FUNCTION 'RS_TOOL_ACCESS'
-*          EXPORTING
-*            operation           = 'SHOW'
-*            object_name         = mv_classname
-*            object_type         = 'CLASS'
-**           ENCLOSING_OBJECT    =
-**           POSITION            = ' '
-**           DEVCLASS            =
-**           INCLUDE             =
-**           VERSION             = ' '
-**           MONITOR_ACTIVATION  = 'X'
-**           WB_MANAGER          =
-**           IN_NEW_WINDOW       =
-**           WITH_OBJECTLIST     = ' '
-**           WITH_WORKLIST       = ' '
-** IMPORTING
-**           NEW_NAME            =
-**           WB_TODO_REQUEST     =
-** TABLES
-**           OBJLIST             =
-** CHANGING
-**           P_REQUEST           = ' '
-*          EXCEPTIONS
-*            not_executed        = 1
-*            invalid_object_type = 2
-*            OTHERS              = 3.
-*        IF sy-subrc <> 0.
-** Implement suitable error handling here
+*        IF mo_class IS INITIAL.
+*          CREATE OBJECT mo_class
+*            EXPORTING
+*              i_parent = mo_bottom_area.
 *        ENDIF.
+*
+*        mo_class->set_visible( EXPORTING visible = abap_true ).
+*
+*        IF mo_text_edit IS NOT INITIAL AND mo_grid IS NOT INITIAL.
+*          mo_text_edit->set_visible( EXPORTING visible = abap_false ).
+*          mo_grid->set_visible( EXPORTING visible = abap_false ).
+*          CLEAR: mv_program, mv_tabname.
+*
+*        ELSEIF mo_text_edit IS NOT INITIAL.
+*          mo_text_edit->set_visible( EXPORTING visible = abap_false ).
+*          CLEAR: mv_program.
+*
+*        ELSEIF mo_grid IS NOT INITIAL.
+*          mo_grid->set_visible( EXPORTING visible = abap_false ).
+*          CLEAR: mv_tabname.
+*
+*        ELSE.
+*          mo_class->set_visible( EXPORTING visible = abap_false ).
+*        ENDIF.
+
+*        lo_class_descr ?= cl_abap_classdescr=>describe_by_name( mv_classname ).
+*        it_methods = lo_class_descr->methods.
+*
+*        CALL FUNCTION 'SEO_CLASS_READ'
+*          EXPORTING
+*            clskey                       = CONV seoclskey( mv_classname )
+*            version                      = seoc_version_active
+*            master_language              = sy-langu
+*            modif_language               = sy-langu
+*            description_bypassing_buffer = abap_false
+*          IMPORTING
+*            class                        = lt_class_info.
+*
+*        IF sy-subrc = 0.
+*
+*          LOOP AT it_methods INTO wa_methods.
+*            APPEND wa_methods TO lt_displaymeth.
+*          ENDLOOP.
+*
+*          CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+*            EXPORTING
+*              i_structure_name = mv_classname
+*            CHANGING
+*              ct_fieldcat      = lt_fieldcat
+*            EXCEPTIONS
+*              OTHERS           = 1.
+*
+*          IF sy-subrc <> 0.
+*            MESSAGE 'Error preparing field catalog' TYPE 'S' DISPLAY LIKE 'E'.
+*            RETURN.
+*          ENDIF.
+*
+*          CLEAR:  lt_fieldcat.
+*          lt_fieldcat = VALUE #(
+*                ( fieldname = 'NAME'          scrtext_m = 'Method Name'    )
+*                ( fieldname = 'LEVEL'         scrtext_m = 'Level'  )
+*                ( fieldname = 'DESCRIPTION'   scrtext_m = 'Description'     ) ).
+*
+*          SET HANDLER:top_of_page FOR mo_class .
+*
+*          " Display the ALV Grid
+*          mo_class->set_table_for_first_display(
+*            EXPORTING
+*              is_layout        = VALUE lvc_s_layo( )
+*
+*            CHANGING
+*              it_outtab        = lt_displaymeth
+*              it_fieldcatalog  = lt_fieldcat
+*            EXCEPTIONS
+*              OTHERS           = 1 ).
+*
+*          mo_top_of_page->initialize_document( ).
+*          mo_class->list_processing_events(
+*               EXPORTING
+*                 i_event_name = 'TOP_OF_PAGE'
+*                 i_dyndoc_id  = mo_top_of_page ).
+*
+*          mo_class->refresh_table_display( ).
+*        ENDIF.
+
+
+        CALL FUNCTION 'RS_TOOL_ACCESS'
+          EXPORTING
+            operation           = 'SHOW'
+            object_name         = mv_classname
+            object_type         = 'CLASS'
+*           ENCLOSING_OBJECT    =
+*           POSITION            = ' '
+*           DEVCLASS            =
+*           INCLUDE             =
+*           VERSION             = ' '
+*           MONITOR_ACTIVATION  = 'X'
+*           WB_MANAGER          =
+*           IN_NEW_WINDOW       =
+*           WITH_OBJECTLIST     = ' '
+*           WITH_WORKLIST       = ' '
+* IMPORTING
+*           NEW_NAME            =
+*           WB_TODO_REQUEST     =
+* TABLES
+*           OBJLIST             =
+* CHANGING
+*           P_REQUEST           = ' '
+          EXCEPTIONS
+            not_executed        = 1
+            invalid_object_type = 2
+            OTHERS              = 3.
+        IF sy-subrc <> 0.
+* Implement suitable error handling here
+        ENDIF.
 
 
 *        SET PARAMETER ID 'CLASS' FIELD mv_classname.
@@ -986,11 +1096,11 @@ CLASS lcl_hier IMPLEMENTATION.
 
         lv_combined_text = CONV sdydo_text_element( lv_text_line ).
       ELSE.
-        lv_combined_text = CONV sdydo_text_element( 'This table does not have documentation.' ).
+        lv_combined_text = CONV sdydo_text_element( 'This object does not have documentation.' ).
       ENDIF.
 
     ELSE.
-      lv_combined_text = CONV sdydo_text_element( 'This table does not have documentation.' ).
+      lv_combined_text = CONV sdydo_text_element( 'This object does not have documentation.' ).
     ENDIF.
 
     mo_top_of_page->add_text(
@@ -1154,7 +1264,7 @@ CLASS lcl_hier IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD go_source_code.
+  METHOD get_source_code.
 
     IF mv_program IS INITIAL.
       MESSAGE 'No program selected.' TYPE 'S' DISPLAY LIKE 'E'.
@@ -1205,7 +1315,7 @@ MODULE user_command_0001 INPUT.
       go_hier->get_documentation( ).
 
     WHEN 'FC_CODE'.
-      go_hier->go_source_code( ).
+      go_hier->get_source_code( ).
 
     WHEN 'FC_CLOSE'.
       go_hier->close_docking( ).
