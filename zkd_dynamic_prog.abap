@@ -1,4 +1,4 @@
-REPORT zkd_dynamic_prog.
+REPORT zkd_hier_doc.
 
 INCLUDE <cl_alv_control>.
 
@@ -7,12 +7,20 @@ DATA: BEGIN OF gs_0001,
       END OF gs_0001.
 
 FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
-
 FIELD-SYMBOLS <lt_data> TYPE STANDARD TABLE. " WITH REFERENCE GLOBAL
 
 CLASS lcl_hier DEFINITION FINAL.
 
   PUBLIC SECTION.
+
+    DATA: mv_edit         TYPE i,
+          ls_component    TYPE abap_componentdescr,
+          mv_show_hide    TYPE char1 VALUE 'H',
+          lr_strucdescr   TYPE REF TO cl_abap_structdescr,
+          lr_tabledescr   TYPE REF TO cl_abap_tabledescr,
+          mo_node         TYPE REF TO cl_salv_node,
+          mt_deleted_rows TYPE STANDARD TABLE OF i,
+          mo_text_edit    TYPE REF TO cl_gui_abapedit.
 
     METHODS : execute,
       on_save,
@@ -22,19 +30,13 @@ CLASS lcl_hier DEFINITION FINAL.
       free_selection,
       edit_mode IMPORTING iv_call TYPE abap_bool OPTIONAL.
 
-    DATA: mv_edit         TYPE i,
-          mv_tabname      TYPE tabname,
-          ls_component    TYPE abap_componentdescr,
-          mv_show_hide    TYPE char1 VALUE 'H',
-          lr_strucdescr   TYPE REF TO cl_abap_structdescr,
-          lr_tabledescr   TYPE REF TO cl_abap_tabledescr,
-          mo_node         TYPE REF TO cl_salv_node,
-          mt_deleted_rows TYPE STANDARD TABLE OF i.
+    METHODS : go_source_code,
+      close_docking.
 
   PRIVATE SECTION.
 
     TYPES: BEGIN OF ty_desc,
-             desc TYPE dd02t-ddtext,
+             desc TYPE as4text,
            END OF ty_desc,
            tt_desc TYPE STANDARD TABLE OF ty_desc WITH DEFAULT KEY.
 
@@ -48,7 +50,14 @@ CLASS lcl_hier DEFINITION FINAL.
           mo_cont        TYPE REF TO cl_gui_custom_container,
           mo_top_of_page TYPE REF TO cl_dd_document,
           mo_top_area    TYPE REF TO cl_gui_container,
-          mo_splitter    TYPE REF TO cl_gui_splitter_container.
+          mo_bottom_area TYPE REF TO cl_gui_container,
+          mo_splitter    TYPE REF TO cl_gui_splitter_container,
+          mv_name        TYPE char255,
+          mv_classname   TYPE seoclass-clsname,
+          mv_program     TYPE trdirt-name,
+          mv_tabname     TYPE tabname.
+
+    DATA: mt_source TYPE STANDARD TABLE OF string.  " Table to hold source code
 
     METHODS : generate_hierarchy,
       generate_nodes,
@@ -56,7 +65,6 @@ CLASS lcl_hier DEFINITION FINAL.
 
     METHODS on_double_click FOR EVENT double_click OF cl_salv_events_tree
       IMPORTING node_key columnname.
-
 
     METHODS
       handle_toolbar FOR EVENT toolbar OF cl_gui_alv_grid
@@ -148,11 +156,6 @@ CLASS lcl_hier IMPLEMENTATION.
       ENDIF.
     ENDIF.
 
-    mo_grid->register_edit_event(
-  EXPORTING
-    i_event_id = cl_gui_alv_grid=>mc_evt_enter
-).
-
   ENDMETHOD.
 
   METHOD generate_hierarchy.
@@ -178,7 +181,7 @@ CLASS lcl_hier IMPLEMENTATION.
     DATA(lo_settings) = mo_tree->get_tree_settings( ).
 
     lo_settings->set_hierarchy_header( 'Object Name' ).
-    lo_settings->set_hierarchy_size( 40 ).
+    lo_settings->set_hierarchy_size( 50 ).
 
     DATA(lv_title) = sy-title.
     lo_settings->set_header( | { lv_title } | ).
@@ -192,64 +195,92 @@ CLASS lcl_hier IMPLEMENTATION.
     mo_tree->display( ).
 
   ENDMETHOD.
-
   METHOD generate_nodes.
 
-    DATA : lv_parent        TYPE salv_de_node_key,
-           mo_node          TYPE REF TO cl_salv_node,
-           ls_set_hierarchy TYPE ty_desc.
+    DATA: lv_main_parent     TYPE salv_de_node_key,
+          lv_category_parent TYPE salv_de_node_key,
+          lt_category_data   TYPE TABLE OF zkd_hier_doc, " Stores category information (e.g., 'TABLE', 'PROGRAM', 'METHODS')
+          lt_child_nodes     TYPE TABLE OF zkd_hier_doc, " Stores child node data (e.g., "Child for TABLE", etc.)
+          ls_set_hierarchy   TYPE ty_desc.
 
-    CLEAR lv_parent.
-    TRY .
+    CLEAR: lv_main_parent, mt_nodes.
 
-        mo_node = mo_nodes->add_node(  related_node   = ' '
-                                       text           = 'Main'
-                                       folder = 'X'
-                                       expander = 'X'
-                                       relationship   = ' ' ).
+    TRY.
+        mo_node = mo_nodes->add_node(
+          related_node = ' '
+          text         = 'Main'
+          folder       = 'X'
+          expander     = 'X'
+          relationship = ' '
+        ).
+        lv_main_parent = mo_node->get_key( ).
 
-        lv_parent  = mo_node->get_key( ).
+        SELECT DISTINCT nodetext
+          FROM zkd_hier_doc
+          INTO CORRESPONDING FIELDS OF TABLE lt_category_data.
 
-        mo_node = mo_nodes->add_node(  related_node   = lv_parent
-                                       text           = 'Tables'
-                                       relationship   = COND #( WHEN lv_parent IS NOT INITIAL THEN cl_gui_column_tree=>relat_last_child ) ).
-
-        lv_parent  = mo_node->get_key( ).
-
-      CATCH cx_salv_msg.
-
-    ENDTRY.
-    SELECT
-      tabname
-      FROM zkd_hier_doc
-      INTO CORRESPONDING FIELDS OF TABLE @mt_nodes
-      WHERE nodetext = 'Tables'
-      ORDER BY nodelevel.
-
-    LOOP AT mt_nodes ASSIGNING FIELD-SYMBOL(<ls_node>).
-
-      SELECT SINGLE "dd02l~tabname,
-                    dd02t~ddtext
-        INTO @ls_set_hierarchy "( @mv_tabname, @lv_ddtext )
-        FROM dd02l
-        LEFT JOIN dd02t
-          ON dd02l~tabname = dd02t~tabname
-         AND dd02t~ddlanguage = @sy-langu
-        WHERE dd02l~tabname = @<ls_node>-tabname.
-
-      TRY .
+        LOOP AT lt_category_data ASSIGNING FIELD-SYMBOL(<ls_category>).
 
           mo_node = mo_nodes->add_node(
-            related_node = lv_parent
-            text         = CONV lvc_value( <ls_node>-tabname )
-            data_row     = ls_set_hierarchy-desc
-            relationship = COND #( WHEN lv_parent IS NOT INITIAL THEN cl_gui_column_tree=>relat_last_child )
+            related_node = lv_main_parent
+            text         = CONV lvc_value( <ls_category>-nodetext )
+            folder       = 'X'
+            expander     = 'X'
+            relationship = COND #( WHEN lv_main_parent IS NOT INITIAL THEN cl_gui_column_tree=>relat_last_child )
           ).
+          lv_category_parent = mo_node->get_key( ).
 
-        CATCH cx_salv_msg.
+          SELECT *
+            FROM zkd_hier_doc
+            INTO TABLE lt_child_nodes
+            WHERE nodetext = <ls_category>-nodetext.
 
-      ENDTRY.
-    ENDLOOP.
+          APPEND LINES OF lt_child_nodes TO mt_nodes.
+
+          LOOP AT lt_child_nodes ASSIGNING FIELD-SYMBOL(<ls_child>).
+
+            CLEAR ls_set_hierarchy.
+
+*table dsc
+            SELECT SINGLE dd02t~ddtext
+              INTO @ls_set_hierarchy
+              FROM dd02l
+              LEFT JOIN dd02t
+                ON dd02l~tabname = dd02t~tabname
+               AND dd02t~ddlanguage = @sy-langu
+              WHERE dd02l~tabname = @<ls_child>-zz_name.
+
+* program dsc
+            SELECT SINGLE text
+              INTO @ls_set_hierarchy
+              FROM trdirt
+              WHERE name = @<ls_child>-zz_name
+              AND sprsl = @sy-langu.
+
+* classes dsc
+            SELECT SINGLE seoclasstx~descript
+              INTO @ls_set_hierarchy
+              FROM seoclass
+              LEFT JOIN seoclasstx
+              ON seoclass~clsname = seoclasstx~clsname
+              AND seoclasstx~langu = @sy-langu
+              WHERE seoclass~clsname = @<ls_child>-zz_name.
+
+            mo_node = mo_nodes->add_node(
+              related_node = lv_category_parent
+              text         = CONV lvc_value( <ls_child>-zz_name )
+              data_row     = ls_set_hierarchy-desc
+              relationship = COND #( WHEN lv_category_parent IS NOT INITIAL THEN cl_gui_column_tree=>relat_last_child )
+            ).
+
+          ENDLOOP.
+
+        ENDLOOP.
+
+      CATCH cx_salv_msg.
+        " Handle any exceptions
+    ENDTRY.
+
 
   ENDMETHOD.
 
@@ -261,11 +292,11 @@ CLASS lcl_hier IMPLEMENTATION.
         mo_nodes = mo_tree->get_nodes( ).
         mo_node = mo_nodes->get_node( node_key ).
 
-        ls_nodes-tabname = mo_node->get_text( ).
+        ls_nodes-zz_name = mo_node->get_text( ).
       CATCH cx_salv_msg.
 
     ENDTRY.
-    READ TABLE mt_nodes INTO ls_nodes WITH KEY tabname = ls_nodes-tabname.
+    READ TABLE mt_nodes INTO ls_nodes WITH KEY zz_name = ls_nodes-zz_name.
     IF sy-subrc <> 0.
       RETURN.
     ENDIF.
@@ -276,23 +307,11 @@ CLASS lcl_hier IMPLEMENTATION.
 
   METHOD display_docking.
 
-    DATA: lt_table       TYPE REF TO data,
-          lt_fieldcat    TYPE lvc_t_fcat,
-          lr_data_table  TYPE REF TO data,
-          lo_bottom_area TYPE REF TO cl_gui_container.
-
-    mv_tabname    = is_tabnodes-tabname.
-
-    CREATE DATA lt_table   TYPE TABLE OF (mv_tabname).
-    ASSIGN lt_table->* TO <fs_table>.
-
-    SELECT *
-      FROM (mv_tabname)
-      INTO TABLE <fs_table>.
-
-    IF <fs_table> IS NOT ASSIGNED."IS INITIAL.
-      RETURN.
-    ENDIF.
+    DATA: lt_table      TYPE REF TO data,
+          lt_fieldcat   TYPE lvc_t_fcat,
+          lr_data_table TYPE REF TO data,
+          lv_exist      TYPE i,
+          lo_class_view TYPE REF TO cl_gui_html_viewer.
 
     IF mo_dock IS INITIAL.
       CREATE OBJECT mo_dock
@@ -301,8 +320,8 @@ CLASS lcl_hier IMPLEMENTATION.
           dynnr = '0001'
           ratio = 70
           side  = cl_gui_docking_container=>dock_at_right.
-
       cl_gui_cfw=>set_new_ok_code( '/00' ).
+
     ENDIF.
 
     IF mo_splitter IS INITIAL.
@@ -311,159 +330,282 @@ CLASS lcl_hier IMPLEMENTATION.
           parent  = mo_dock
           rows    = 2
           columns = 1.
+
+      mo_top_area = mo_splitter->get_container( row = 1 column = 1 ).
+
+      IF mo_top_of_page IS INITIAL.
+        CREATE OBJECT mo_top_of_page
+          EXPORTING
+            style = 'ALV_GRID'.
+      ENDIF.
+
+      mo_bottom_area = mo_splitter->get_container( row = 2 column = 1 ).
     ENDIF.
 
     mo_splitter->set_row_sash(   id    = 1
-                            type  = cl_gui_splitter_container=>type_sashvisible
-                            value = cl_gui_splitter_container=>false ).
+                        type  = cl_gui_splitter_container=>type_sashvisible
+                        value = cl_gui_splitter_container=>false ).
 
-*    *    ================================================================
-    CASE mv_show_hide.
-
-      WHEN 'D'.
-        DATA(lv_height) = 15.
-        mo_splitter->set_row_sash(   id    = 1
-                                    type  = cl_gui_splitter_container=>type_sashvisible
-                                    value = cl_gui_splitter_container=>false ).
-      WHEN 'H'.
-        lv_height = 0.
-        mo_splitter->set_row_sash(   id    = 1
-                                    type  = cl_gui_splitter_container=>type_sashvisible
-                                    value = cl_gui_splitter_container=>false ).
-    ENDCASE.
+    DATA(lv_height) = COND #(
+      WHEN mv_show_hide = 'D' THEN 15 ELSE 0 ).
 
     mo_splitter->set_row_height(
       EXPORTING
-        id                =  1   " Row ID
-        height            = lv_height     " Height
-      EXCEPTIONS
-        cntl_error        = 1
-        cntl_system_error = 2
-        OTHERS            = 3
-    ).
+        id     = 1
+        height = lv_height ).
 
-*    ================================================================
+    mv_name = is_tabnodes-zz_name. " get the selected object name
 
-    mo_top_area = mo_splitter->get_container( row = 1 column = 1 ).
+* check if it is a program
+    SELECT SINGLE 1 INTO @lv_exist
+      FROM trdir
+      WHERE name = @mv_name.
 
-    IF mo_top_of_page IS INITIAL.
-      CREATE OBJECT mo_top_of_page
+    IF sy-subrc = 0.
+
+      IF mo_text_edit IS INITIAL.
+        CREATE OBJECT mo_text_edit
+          EXPORTING
+            parent = mo_bottom_area.
+      ENDIF.
+
+      mo_text_edit->set_visible( EXPORTING visible = abap_true ).
+      IF mo_grid IS NOT INITIAL.
+        mo_grid->set_visible( EXPORTING visible = abap_false ).
+        CLEAR: mv_tabname.
+      ENDIF.
+
+      mv_program = mv_name.
+
+      READ REPORT mv_program INTO mt_source.
+
+      mo_text_edit->set_text( mt_source ). " Update text editor
+
+      DATA(it_source_code_out) = VALUE stringtab( ).
+      CALL FUNCTION 'PRETTY_PRINTER'
         EXPORTING
-          style = 'ALV_GRID'.
-    ENDIF.
-
-    lo_bottom_area = mo_splitter->get_container( row = 2 column = 1 ).
-
-    IF mo_grid IS INITIAL.
-      CREATE OBJECT mo_grid
-        EXPORTING
-          i_parent = lo_bottom_area.
-    ENDIF.
-
-    CLEAR lt_fieldcat.
-    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
-      EXPORTING
-        i_structure_name = mv_tabname
-      CHANGING
-        ct_fieldcat      = lt_fieldcat
-      EXCEPTIONS
-        OTHERS           = 1.
-
-    IF sy-subrc <> 0.
-      MESSAGE 'Error preparing field catalog' TYPE 'S' DISPLAY LIKE 'E'.
-      RETURN.
-    ENDIF.
-
-    edit_mode( ).
-
-    DATA(lo_str) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( p_name = mv_tabname ) ).
-    DATA(lt_components) = lo_str->get_components( ).
-
-    APPEND VALUE #( name = 'STYLE'
-                    type = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( p_name = 'LVC_T_STYL' ) )
-                  ) TO lt_components.
-
-
-    lr_strucdescr = cl_abap_structdescr=>create( lt_components ).
-    lr_tabledescr = cl_abap_tabledescr=>create( p_line_type = lr_strucdescr ).
-
-    CREATE DATA lr_data_table TYPE HANDLE lr_tabledescr.
-
-    ASSIGN lr_data_table->* TO <lt_data>.
-
-    SELECT *
-      FROM (mv_tabname)
-      UP TO 10 ROWS
-      INTO CORRESPONDING FIELDS OF TABLE <lt_data>.
-
-    SORT <lt_data> .
-
-    DATA(ls_layout) = VALUE lvc_s_layo( cwidth_opt  = abap_true
-                                        stylefname  = 'STYLE'
-                                        edit = COND #( WHEN mv_edit IS INITIAL THEN abap_false ELSE abap_true )
-                                        ).
-
-    TRY.
-        cl_abap_list_layout=>suppress_toolbar( ).
-      CATCH cx_list_already_active.
-    ENDTRY.
-
-    mo_grid->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
-
-    DATA(lt_tb_exc) = VALUE ui_functions(
-                ( '&LOCAL&INSERT_ROW'    )
-                ( '&LOCAL&CUT'    )
-                ( '&LOCAL&COPY'   )
-                ( '&LOCAL&PASTE'  )
-                ( '&LOCAL&COPY_ROW'  )
-                ( '&LOCAL&PASTE_NEW_ROW'  )
-                ( '&INFO'         )
-    ).
-
-    SET HANDLER: handle_toolbar
-           handle_ucomm
-           handle_data_changed
-           top_of_page
-            FOR mo_grid .
-
-
-
-    LOOP AT lt_fieldcat ASSIGNING FIELD-SYMBOL(<ls_fieldcat>) WHERE key <> 'X'.
-      <ls_fieldcat>-edit = 'X'.
-    ENDLOOP.
-    mo_grid->set_ready_for_input( 0 ).
-
-    TRY.
-        mo_grid->set_table_for_first_display(
-        EXPORTING
-          is_layout                     = ls_layout                 " Layout
-          it_toolbar_excluding          = lt_tb_exc
-        CHANGING
-          it_outtab                     = <lt_data>               " Output Table
-          it_fieldcatalog               = lt_fieldcat              " Field Catalog
+          inctoo             = space
+        TABLES
+          ntext              = it_source_code_out
+          otext              = mt_source
         EXCEPTIONS
-          invalid_parameter_combination = 1                " Wrong Parameter
-          program_error                 = 2                " Program Errors
-          too_many_lines                = 3                " Too many Rows in Ready for Input Grid
-          OTHERS                        = 4
-      ).
-      CATCH cx_salv_msg INTO DATA(lx_msg).
-        MESSAGE lx_msg->get_longtext( ) TYPE 'S' DISPLAY LIKE 'E'.
-        RETURN.
-    ENDTRY.
+          enqueue_table_full = 1
+          include_enqueued   = 2
+          include_readerror  = 3
+          include_writeerror = 4
+          OTHERS             = 5.
 
-    mo_top_of_page->initialize_document( ).
-    mo_grid->list_processing_events(
-         EXPORTING
-           i_event_name = 'TOP_OF_PAGE'
-           i_dyndoc_id  = mo_top_of_page ).
+      mo_text_edit->set_readonly_mode( 1 ).
+*      mo_text_edit->set_toolbar_mode( cl_gui_abapedit=>true ).
+      mo_text_edit->set_text( it_source_code_out ).  " Update text editor
+
+      mo_top_of_page->initialize_document( ).
+*      mo_text_edit->list_processing_events(
+*           EXPORTING
+*             i_event_name = 'TOP_OF_PAGE'
+*             i_dyndoc_id  = mo_top_of_page ).
+
+    ENDIF.
+
+* check if it is a table
+    IF lv_exist = 0.
+      SELECT SINGLE 1 INTO @lv_exist FROM dd02l WHERE tabname = @mv_name. " Check for tables
+      IF sy-subrc = 0.
+
+        mv_tabname = mv_name.
+        " Switching to table view
+
+        CREATE DATA lt_table   TYPE TABLE OF (mv_tabname).
+        ASSIGN lt_table->* TO <fs_table>.
+
+        SELECT *
+          FROM (mv_tabname)
+          INTO TABLE <fs_table>.
+
+        IF <fs_table> IS NOT ASSIGNED.
+          RETURN.
+        ENDIF.
+
+        IF mo_grid IS INITIAL.
+          CREATE OBJECT mo_grid
+            EXPORTING
+              i_parent = mo_bottom_area.
+        ENDIF.
+
+        mo_grid->set_visible( EXPORTING visible = abap_true ).
+        IF mo_text_edit IS NOT INITIAL.
+          mo_text_edit->set_visible( EXPORTING visible = abap_false ).
+          CLEAR mv_program.
+        ENDIF.
+
+        CLEAR lt_fieldcat.
+        CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+          EXPORTING
+            i_structure_name = mv_tabname
+          CHANGING
+            ct_fieldcat      = lt_fieldcat
+          EXCEPTIONS
+            OTHERS           = 1.
+
+        IF sy-subrc <> 0.
+          MESSAGE 'Error preparing field catalog' TYPE 'S' DISPLAY LIKE 'E'.
+          RETURN.
+        ENDIF.
+
+        edit_mode( ).
+
+        DATA(lo_str) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( p_name = mv_tabname ) ).
+        DATA(lt_components) = lo_str->get_components( ).
+
+        APPEND VALUE #( name = 'STYLE'
+                        type = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( p_name = 'LVC_T_STYL' ) )
+                      ) TO lt_components.
+
+        lr_strucdescr = cl_abap_structdescr=>create( lt_components ).
+        lr_tabledescr = cl_abap_tabledescr=>create( p_line_type = lr_strucdescr ).
+
+        CREATE DATA lr_data_table TYPE HANDLE lr_tabledescr.
+
+        ASSIGN lr_data_table->* TO <lt_data>.
+
+        SELECT *
+          FROM (mv_tabname)
+          UP TO 10 ROWS
+          INTO CORRESPONDING FIELDS OF TABLE <lt_data>.
+
+        SORT <lt_data> .
+
+        DATA(ls_layout) = VALUE lvc_s_layo( cwidth_opt  = abap_true
+                                            stylefname  = 'STYLE'
+                                            edit = COND #( WHEN mv_edit IS INITIAL THEN abap_false ELSE abap_true )
+                                            ).
+
+        TRY.
+            cl_abap_list_layout=>suppress_toolbar( ).
+          CATCH cx_list_already_active.
+        ENDTRY.
+
+        mo_grid->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
+
+        DATA(lt_tb_exc) = VALUE ui_functions(
+                    ( '&LOCAL&INSERT_ROW'    )
+                    ( '&LOCAL&CUT'    )
+                    ( '&LOCAL&COPY'   )
+                    ( '&LOCAL&PASTE'  )
+                    ( '&LOCAL&COPY_ROW'  )
+                    ( '&LOCAL&PASTE_NEW_ROW'  )
+                    ( '&INFO'         )
+        ).
+
+        SET HANDLER: handle_toolbar
+               handle_ucomm
+               handle_data_changed
+               top_of_page
+                FOR mo_grid .
+
+        LOOP AT lt_fieldcat ASSIGNING FIELD-SYMBOL(<ls_fieldcat>) WHERE key <> 'X'.
+          <ls_fieldcat>-edit = 'X'.
+        ENDLOOP.
+        mo_grid->set_ready_for_input( 0 ).
+
+        TRY.
+            mo_grid->set_table_for_first_display(
+            EXPORTING
+              is_layout                     = ls_layout                 " Layout
+              it_toolbar_excluding          = lt_tb_exc
+            CHANGING
+              it_outtab                     = <lt_data>               " Output Table
+              it_fieldcatalog               = lt_fieldcat              " Field Catalog
+            EXCEPTIONS
+              invalid_parameter_combination = 1                " Wrong Parameter
+              program_error                 = 2                " Program Errors
+              too_many_lines                = 3                " Too many Rows in Ready for Input Grid
+              OTHERS                        = 4
+          ).
+          CATCH cx_salv_msg INTO DATA(lx_msg).
+            MESSAGE lx_msg->get_longtext( ) TYPE 'S' DISPLAY LIKE 'E'.
+            RETURN.
+        ENDTRY.
+
+        mo_top_of_page->initialize_document( ).
+        mo_grid->list_processing_events(
+             EXPORTING
+               i_event_name = 'TOP_OF_PAGE'
+               i_dyndoc_id  = mo_top_of_page ).
+
+        mo_grid->refresh_table_display( ).
+
+      ENDIF.
+    ENDIF.
+
+* check if it is a class
+    IF lv_exist = 0.
+      SELECT SINGLE 1 INTO @lv_exist FROM seoclass WHERE clsname = @mv_name.
+      IF sy-subrc = 0.
+
+        DATA:    lt_class_info   TYPE STANDARD TABLE OF seoc_class_r,
+                 lv_html_content TYPE string.
+
+        mv_classname = mv_name.
+
+        CALL FUNCTION 'SEO_CLASS_READ'
+          EXPORTING
+            clskey                       = CONV seoclskey( mv_classname )
+            version                      = seoc_version_active
+            master_language              = sy-langu
+            modif_language               = sy-langu
+            description_bypassing_buffer = abap_false
+          IMPORTING
+            class                        = lt_class_info.
+
+
+        IF lo_class_view IS INITIAL.
+          CREATE OBJECT lo_class_view
+            EXPORTING
+              parent = mo_bottom_area.
+        ENDIF.
+
+
+*        CALL FUNCTION 'RS_TOOL_ACCESS'
+*          EXPORTING
+*            operation           = 'SHOW'
+*            object_name         = mv_classname
+*            object_type         = 'CLASS'
+**           ENCLOSING_OBJECT    =
+**           POSITION            = ' '
+**           DEVCLASS            =
+**           INCLUDE             =
+**           VERSION             = ' '
+**           MONITOR_ACTIVATION  = 'X'
+**           WB_MANAGER          =
+**           IN_NEW_WINDOW       =
+**           WITH_OBJECTLIST     = ' '
+**           WITH_WORKLIST       = ' '
+** IMPORTING
+**           NEW_NAME            =
+**           WB_TODO_REQUEST     =
+** TABLES
+**           OBJLIST             =
+** CHANGING
+**           P_REQUEST           = ' '
+*          EXCEPTIONS
+*            not_executed        = 1
+*            invalid_object_type = 2
+*            OTHERS              = 3.
+*        IF sy-subrc <> 0.
+** Implement suitable error handling here
+*        ENDIF.
+
+
+*        SET PARAMETER ID 'CLASS' FIELD mv_classname.
+*        CALL TRANSACTION 'SE24' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN  .
+
+      ENDIF.
+    ENDIF.
 
     IF mo_dock IS NOT INITIAL.
       mo_dock->set_visible( EXPORTING visible = abap_true ). " Keep the docking container visible
-
     ENDIF.
-
-    mo_grid->refresh_table_display( ).
 
   ENDMETHOD.
 
@@ -531,8 +673,16 @@ CLASS lcl_hier IMPLEMENTATION.
                    <lt_db>      TYPE STANDARD TABLE,
                    <lt_db_data> TYPE STANDARD TABLE.
 
+    IF mv_tabname IS INITIAL.
+      MESSAGE 'Save data only when a change is made in Tables.' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
 
-    mo_grid->check_changed_data(  ).
+    IF mv_changed = abap_false.
+      MESSAGE 'No changes have been made to Save!' TYPE 'S' DISPLAY LIKE 'E'.
+      mo_grid->set_ready_for_input( 0 ).  " Disable editing
+      RETURN.  " Exit the method without saving
+    ENDIF.
 
     " Get the structure description dynamically
     lr_strucdescr ?= cl_abap_typedescr=>describe_by_name( mv_tabname ).
@@ -554,7 +704,6 @@ CLASS lcl_hier IMPLEMENTATION.
          FROM (mv_tabname)
          INTO TABLE <lt_db>.
 
-
     SORT <lt_db> ASCENDING.
 
     " Get key fields dynamically ( KEY = 'X')
@@ -563,7 +712,6 @@ CLASS lcl_hier IMPLEMENTATION.
         APPEND <ls_fcat>-fieldname TO lt_keys.
       ENDIF.
     ENDLOOP.
-
 
     IF mt_deleted_rows IS INITIAL.
       " Check for duplicates
@@ -711,7 +859,9 @@ CLASS lcl_hier IMPLEMENTATION.
 
     MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno DISPLAY LIKE 'E'
       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+
     mv_edit = 0.
+
   ENDMETHOD.
 
   METHOD handle_toolbar.
@@ -757,28 +907,25 @@ CLASS lcl_hier IMPLEMENTATION.
           MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
             WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
         ENDIF.
-        "End of VQ
 
       WHEN 'FC_CLOSE'.
 
-        mo_dock->set_visible(
-                EXPORTING
-                visible           = abap_false                 " Visible
-                EXCEPTIONS
-                cntl_error        = 1                " CNTL_ERROR
-                cntl_system_error = 2                " CNTL_SYSTEM_ERROR
-                OTHERS            = 3 ).
-        IF sy-subrc <> 0.
-          MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
-            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
-        ENDIF.
-        CLEAR: mv_tabname.
+*        mo_dock->set_visible(
+*                EXPORTING
+*                visible           = abap_false                 " Visible
+*                EXCEPTIONS
+*                cntl_error        = 1                " CNTL_ERROR
+*                cntl_system_error = 2                " CNTL_SYSTEM_ERROR
+*                OTHERS            = 3 ).
+*        IF sy-subrc <> 0.
+*          MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+*            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+*        ENDIF.
+*        CLEAR: mv_name, mv_tabname, mv_program, mv_classname.
       WHEN 'FC_EDIT'.
 
         IF mv_edit = 1.
           mv_edit = 0.
-
-
 
 *    lock the object
           CALL FUNCTION 'DEQUEUE_E_TABLE'
@@ -808,7 +955,7 @@ CLASS lcl_hier IMPLEMENTATION.
     CLEAR: lv_combined_text, lt_text_lines, lv_text_line.
 
     SELECT SINGLE a~tdname,
-                  a~tabname,
+                  a~zz_name,
                   b~tdid,
                   b~tdspras,
                   b~tdobject
@@ -816,7 +963,7 @@ CLASS lcl_hier IMPLEMENTATION.
       FROM zkd_hier_doc AS a
       INNER JOIN stxh AS b
         ON a~tdname = b~tdname
-      WHERE a~tabname = @mv_tabname
+      WHERE a~zz_name = @mv_tabname
             AND b~tdspras = @sy-langu.
 
     IF sy-subrc = 0 AND ls_text_name-tdname IS NOT INITIAL.
@@ -865,8 +1012,8 @@ CLASS lcl_hier IMPLEMENTATION.
 
   METHOD get_documentation.
 
-    IF mv_tabname IS INITIAL.
-      MESSAGE 'Please select a table before showing documentation.' TYPE 'S' DISPLAY LIKE 'E'.
+    IF mv_name IS INITIAL.
+      MESSAGE 'Please select a table or program before showing documentation.' TYPE 'S' DISPLAY LIKE 'E'.
       RETURN.
     ENDIF.
 
@@ -914,73 +1061,107 @@ CLASS lcl_hier IMPLEMENTATION.
     IF mv_tabname IS INITIAL.
       MESSAGE 'Please select a table before free selection.' TYPE 'S' DISPLAY LIKE 'E'.
       RETURN.
-    ENDIF.
+    ELSE.
+      lt_tables = VALUE #( ( prim_tab = mv_tabname ) ).
 
-    lt_tables = VALUE #( ( prim_tab = mv_tabname ) ).
-
-    CALL FUNCTION 'FREE_SELECTIONS_INIT'
-      EXPORTING
-        kind                     = 'T'
-      IMPORTING
-        selection_id             = lv_selection_id
-      TABLES
-        tables_tab               = lt_tables
-      EXCEPTIONS
-        fields_incomplete        = 1
-        fields_no_join           = 2
-        field_not_found          = 3
-        no_tables                = 4
-        table_not_found          = 5
-        expression_not_supported = 6
-        incorrect_expression     = 7
-        illegal_kind             = 8
-        area_not_found           = 9
-        inconsistent_area        = 10
-        kind_f_no_fields_left    = 11
-        kind_f_no_fields         = 12
-        too_many_fields          = 13
-        dup_field                = 14
-        field_no_type            = 15
-        field_ill_type           = 16
-        dup_event_field          = 17
-        node_not_in_ldb          = 18
-        area_no_field            = 19
-        OTHERS                   = 20.
-    IF sy-subrc <> 0.
+      CALL FUNCTION 'FREE_SELECTIONS_INIT'
+        EXPORTING
+          kind                     = 'T'
+        IMPORTING
+          selection_id             = lv_selection_id
+        TABLES
+          tables_tab               = lt_tables
+        EXCEPTIONS
+          fields_incomplete        = 1
+          fields_no_join           = 2
+          field_not_found          = 3
+          no_tables                = 4
+          table_not_found          = 5
+          expression_not_supported = 6
+          incorrect_expression     = 7
+          illegal_kind             = 8
+          area_not_found           = 9
+          inconsistent_area        = 10
+          kind_f_no_fields_left    = 11
+          kind_f_no_fields         = 12
+          too_many_fields          = 13
+          dup_field                = 14
+          field_no_type            = 15
+          field_ill_type           = 16
+          dup_event_field          = 17
+          node_not_in_ldb          = 18
+          area_no_field            = 19
+          OTHERS                   = 20.
+      IF sy-subrc <> 0.
 * Implement suitable error handling here
-    ENDIF.
-
-    CALL FUNCTION 'FREE_SELECTIONS_DIALOG'
-      EXPORTING
-        selection_id    = lv_selection_id
-        title           = 'Free Selection'
-        as_window       = ' '
-      IMPORTING
-        where_clauses   = lt_where_clauses
-      TABLES
-        fields_tab      = lt_fields
-      EXCEPTIONS
-        internal_error  = 1
-        no_action       = 2
-        selid_not_found = 3
-        illegal_status  = 4
-        OTHERS          = 5.
-    IF sy-subrc <> 0.
-* Implement suitable error handling here
-    ENDIF.
-
-    CREATE DATA lo_row LIKE LINE OF <fs_table>.
-    ASSIGN lo_row->* TO <fs_row>.
-    IF <fs_row> IS ASSIGNED.
-      IF lines( lt_where_clauses ) > 0.
-        DATA(ls_where_clause) = lt_where_clauses[ tablename = mv_tabname ].
-        SELECT * FROM (mv_tabname) INTO CORRESPONDING FIELDS OF TABLE <lt_data> WHERE (ls_where_clause-where_tab).
-      ELSE.
-        SELECT * FROM (mv_tabname) INTO CORRESPONDING FIELDS OF TABLE <lt_data> UP TO 10 ROWS.
       ENDIF.
+
+      CALL FUNCTION 'FREE_SELECTIONS_DIALOG'
+        EXPORTING
+          selection_id    = lv_selection_id
+          title           = 'Free Selection'
+          as_window       = ' '
+        IMPORTING
+          where_clauses   = lt_where_clauses
+        TABLES
+          fields_tab      = lt_fields
+        EXCEPTIONS
+          internal_error  = 1
+          no_action       = 2
+          selid_not_found = 3
+          illegal_status  = 4
+          OTHERS          = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CREATE DATA lo_row LIKE LINE OF <fs_table>.
+      ASSIGN lo_row->* TO <fs_row>.
+      IF <fs_row> IS ASSIGNED.
+        IF lines( lt_where_clauses ) > 0.
+          DATA(ls_where_clause) = lt_where_clauses[ tablename = mv_tabname ].
+          SELECT * FROM (mv_tabname) INTO CORRESPONDING FIELDS OF TABLE <lt_data> WHERE (ls_where_clause-where_tab).
+        ELSE.
+          SELECT * FROM (mv_tabname) INTO CORRESPONDING FIELDS OF TABLE <lt_data> UP TO 10 ROWS.
+        ENDIF.
+      ENDIF.
+
+      mo_grid->refresh_table_display( ).
+
     ENDIF.
 
-    mo_grid->refresh_table_display( ).
+  ENDMETHOD.
+
+  METHOD close_docking.
+
+    IF mo_dock IS INITIAL.
+      MESSAGE 'No docking is open to Close' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    mo_dock->set_visible(
+            EXPORTING
+            visible           = abap_false                 " Visible
+            EXCEPTIONS
+            cntl_error        = 1                " CNTL_ERROR
+            cntl_system_error = 2                " CNTL_SYSTEM_ERROR
+            OTHERS            = 3 ).
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+    CLEAR: mv_name, mv_tabname, mv_program, mv_classname.
+
+  ENDMETHOD.
+
+  METHOD go_source_code.
+
+    IF mv_program IS INITIAL.
+      MESSAGE 'No program selected.' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    EDITOR-CALL FOR REPORT mv_program DISPLAY-MODE.
 
   ENDMETHOD.
 ENDCLASS.
@@ -997,9 +1178,11 @@ START-OF-SELECTION.
 *&---------------------------------------------------------------------*
 *       text
 *----------------------------------------------------------------------*
-MODULE status_0001 OUTPUT.
-  SET PF-STATUS 'ZKD_PF_STATUS_DOCK'.
+MODULE  status_0001  OUTPUT.
+
+  SET PF-STATUS 'ZKD_PF_STATUS_DOCK' .
   SET TITLEBAR 'ZKD_MAINTENANCE'.
+
 ENDMODULE.
 *&---------------------------------------------------------------------*
 *&      Module  USER_COMMAND_0001  INPUT
@@ -1010,7 +1193,6 @@ MODULE user_command_0001 INPUT.
 
   CASE gs_0001-ok_code.
     WHEN 'FC_BACK'.
-
       go_hier->on_back( ).
 
     WHEN 'FC_SAVE'.
@@ -1021,6 +1203,12 @@ MODULE user_command_0001 INPUT.
 
     WHEN 'FC_TEXT'.
       go_hier->get_documentation( ).
+
+    WHEN 'FC_CODE'.
+      go_hier->go_source_code( ).
+
+    WHEN 'FC_CLOSE'.
+      go_hier->close_docking( ).
 
   ENDCASE.
 
