@@ -19,7 +19,7 @@ SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   PARAMETERS :p_file TYPE string MODIF ID bl1,
-              p_doct TYPE blart DEFAULT 'B2' MODIF ID bl1.
+              p_doct TYPE blart DEFAULT 'GF' MODIF ID bl1.
 SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-001.
@@ -79,6 +79,8 @@ CLASS lcl_cont_tech_ivass DEFINITION FINAL.
               pstng_date   TYPE budat,
               doc_date     TYPE bldat,
               buzei        TYPE buzei,
+              altkt        TYPE altkt, "alternative acc
+              desc         TYPE txt50, "desc
               gl_account   TYPE hkont,
               item_text    TYPE sgtxt,
               pargb        TYPE pargb,
@@ -91,6 +93,8 @@ CLASS lcl_cont_tech_ivass DEFINITION FINAL.
               hsl          TYPE acdoca-hsl,
               tsl          TYPE acdoca-tsl,
               currency     TYPE waers,
+              tipo_polizza TYPE ztipo_polizza,
+
             END OF ty_alv_data.
 
     DATA: mo_salv_msg  TYPE REF TO cl_salv_table,
@@ -103,6 +107,7 @@ CLASS lcl_cont_tech_ivass DEFINITION FINAL.
     METHODS call_bapi IMPORTING iv_test    TYPE abap_bool
                                 is_head    TYPE bapiache09
                                 it_glacc   TYPE bapiacgl09_tab
+                                it_exten   TYPE bapiparex_t
                                 it_curre   TYPE bapiaccr09_tab
                                 iv_buzei   TYPE buzei
                                 iv_doc     TYPE string
@@ -196,7 +201,6 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
 
       CREATE OBJECT mo_dock_msg
         EXPORTING
-*         parent = cl_gui_container=>screen0
           repid = sy-repid
           dynnr = '0001'
           ratio = 50
@@ -354,6 +358,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              par_comp      TYPE string,
              int_bank      TYPE string,
              account_id    TYPE string,
+             tipo_polizza  TYPE string,
            END OF ty_split.
 
     TYPES: BEGIN OF ty_awkey_buzei,
@@ -422,7 +427,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             ls_split-attribuzione
             ls_split-par_comp
             ls_split-int_bank
-            ls_split-account_id.
+            ls_split-account_id
+            ls_split-tipo_polizza.
 
       ls_split-pstng_date = |{ ls_split-pstng_date+6(4) }{ ls_split-pstng_date+3(2) }{ ls_split-pstng_date(2) }|.
       ls_split-doc_date = |{ ls_split-doc_date+6(4) }{ ls_split-doc_date+3(2) }{ ls_split-doc_date(2) }|.
@@ -459,11 +465,12 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             par_comp        = ls_split-par_comp
             int_bank        = ls_split-int_bank
             account_id      = ls_split-account_id
-            hsl             = COND #( WHEN ls_split-dare_interno <> 0 THEN -1 * ls_split-dare_interno
-                                      ELSE ls_split-avere_interno )
-            tsl             = COND #( WHEN ls_split-dare_esterno <> 0 THEN -1 * ls_split-dare_interno
-                                      ELSE ls_split-avere_esterno )
+            hsl             = COND #( WHEN ls_split-dare_interno <> 0 THEN ls_split-dare_interno
+                                      ELSE -1 * ls_split-avere_interno )
+            tsl             = COND #( WHEN ls_split-dare_esterno <> 0 THEN ls_split-dare_interno
+                                      ELSE -1 * ls_split-avere_esterno )
             currency        = ls_split-currency
+            tipo_polizza    = ls_split-tipo_polizza
       ) TO mt_alv_data.
 
     ENDLOOP.
@@ -496,19 +503,49 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
       INTO TABLE @DATA(lt_ska1).
     SORT lt_ska1 BY act_saknr.
 
+    SELECT skb1~bukrs,
+           skat~saknr,
+           skb1~altkt,
+           skat~txt50
+      FROM skb1
 
-    LOOP AT mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_alv_data>) WHERE int_bank IS NOT INITIAL.
+      JOIN t001
+        ON t001~bukrs = skb1~bukrs
 
-      READ TABLE lt_ska1 ASSIGNING FIELD-SYMBOL(<ls_ska1>)
-         WITH KEY act_saknr = <ls_alv_data>-gl_account BINARY SEARCH.
-      IF sy-subrc <> 0.
-        CONTINUE.
+      LEFT JOIN skat
+      ON skat~saknr = skb1~saknr
+        AND skat~ktopl = t001~ktopl
+        AND skat~spras = 'I'
+
+      FOR ALL ENTRIES IN @mt_alv_data
+      WHERE skb1~saknr  = @mt_alv_data-gl_account
+      AND skb1~bukrs    = @mt_alv_data-comp_code
+      INTO TABLE @DATA(lt_acc_and_dsc).
+
+    SORT lt_acc_and_dsc BY bukrs saknr .
+
+    LOOP AT mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_alv_data>) .
+
+      IF <ls_alv_data>-int_bank IS NOT INITIAL.
+
+        READ TABLE lt_ska1 INTO DATA(ls_ska1)
+           WITH KEY act_saknr = <ls_alv_data>-gl_account BINARY SEARCH.
+
+        IF sy-subrc = 0.
+          <ls_alv_data>-hkont_gtran = ls_ska1-opp_saknr.
+        ENDIF.
+
       ENDIF.
 
-      <ls_alv_data>-hkont_gtran = <ls_ska1>-opp_saknr.
+      READ TABLE lt_acc_and_dsc INTO DATA(ls_acc_and_dsc)
+      WITH KEY bukrs = <ls_alv_data>-comp_code
+      saknr = <ls_alv_data>-gl_account BINARY SEARCH.
 
+      IF sy-subrc = 0.
+        <ls_alv_data>-altkt = ls_acc_and_dsc-altkt.
+        <ls_alv_data>-desc = ls_acc_and_dsc-txt50.
+      ENDIF.
     ENDLOOP.
-
 
     SORT mt_alv_data BY awkey.
 
@@ -519,6 +556,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              buzei  TYPE buzei,
              header TYPE bapiache09,
              items  TYPE STANDARD TABLE OF bapiacgl09 WITH DEFAULT KEY,
+             exten  TYPE STANDARD TABLE OF bapiparex  WITH DEFAULT KEY,
              currc  TYPE STANDARD TABLE OF bapiaccr09 WITH DEFAULT KEY,
            END OF ty_post_bapi.
 
@@ -527,16 +565,20 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
              belnr TYPE belnr_d,
            END OF ty_belnr.
 
-    DATA: lt_selected    TYPE salv_t_row,
-          lt_db_item_all TYPE STANDARD TABLE OF zfi_t_icont_tech,
-          lt_db_item     TYPE STANDARD TABLE OF zfi_t_icont_tech,
-          lt_db_header   TYPE STANDARD TABLE OF zfi_t_hcont_tech,
-          ls_db_header   TYPE zfi_t_hcont_tech,
-          lv_error       TYPE abap_bool,
-          lv_obj_key     TYPE bapiache09-obj_key,
-          lt_post_bapi   TYPE STANDARD TABLE OF ty_post_bapi,
-          lr_awkey       TYPE RANGE OF awkey,
-          lt_belnr       TYPE STANDARD TABLE OF ty_belnr.
+    DATA: lt_selected     TYPE salv_t_row,
+          lt_db_item_all  TYPE STANDARD TABLE OF zfi_t_icont_tech,
+          lt_db_item      TYPE STANDARD TABLE OF zfi_t_icont_tech,
+          lt_db_header    TYPE STANDARD TABLE OF zfi_t_hcont_tech,
+          ls_db_header    TYPE zfi_t_hcont_tech,
+          lv_error        TYPE abap_bool,
+          lv_obj_key      TYPE bapiache09-obj_key,
+          lt_post_bapi    TYPE STANDARD TABLE OF ty_post_bapi,
+          lr_awkey        TYPE RANGE OF awkey,
+          lt_belnr        TYPE STANDARD TABLE OF ty_belnr,
+          lv_char960(960) TYPE c.
+
+    DATA: ls_ext2     TYPE bapiparex,
+          ls_zci_cobl TYPE zci_cobl.
 
     GET TIME FIELD DATA(lv_uzeit).
 
@@ -626,8 +668,26 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
                                   housebankid     = <ls_alv_data>-int_bank
                                   housebankacctid = <ls_alv_data>-account_id
                                   alloc_nmbr      = <ls_alv_data>-attribuzione
-                                  value_date      = sy-datum
+                                  value_date      = <ls_alv_data>-pstng_date
                                   ) TO <ls_post_bapi_main>-items.
+
+        ls_zci_cobl = VALUE #( zz_tipo_polizza = <ls_alv_data>-tipo_polizza
+                               posnr = CONV posnr( <ls_alv_data>-buzei ) ).
+
+        ls_ext2-structure = 'ZCI_COBL'.
+
+        cl_abap_container_utilities=>fill_container_c(
+          EXPORTING
+            im_value               = ls_zci_cobl                 " Data for Filling Container
+          IMPORTING
+            ex_container           = lv_char960                 " Container
+          EXCEPTIONS
+            illegal_parameter_type = 1                " Invalid type for the parameter IM_VALUE
+            OTHERS                 = 2
+        ).
+
+        ls_ext2+30 = lv_char960.
+        APPEND ls_ext2 TO <ls_post_bapi_main>-exten.
 
         APPEND VALUE bapiaccr09(
                          itemno_acc = <ls_alv_data>-buzei
@@ -668,7 +728,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
            housebankid     = <ls_alv_data>-int_bank
            housebankacctid = <ls_alv_data>-account_id
            alloc_nmbr      = <ls_alv_data>-attribuzione
-           value_date      = sy-datum
+           value_date      = <ls_alv_data>-pstng_date
          )
          ( itemno_acc      = 2
            gl_account      = <ls_alv_data>-hkont_gtran
@@ -681,8 +741,49 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
            housebankid     = <ls_alv_data>-int_bank
            housebankacctid = <ls_alv_data>-account_id
            alloc_nmbr      = <ls_alv_data>-attribuzione
-           value_date      = sy-datum
+           value_date      = <ls_alv_data>-pstng_date
          ) ).
+
+
+        CLEAR: ls_ext2,ls_zci_cobl.
+
+        ls_zci_cobl = VALUE #( zz_tipo_polizza = <ls_alv_data>-tipo_polizza
+                               posnr         = CONV posnr( <ls_alv_data>-buzei ) ).
+
+        ls_ext2-structure = 'ZCI_COBL'.
+
+        cl_abap_container_utilities=>fill_container_c(
+          EXPORTING
+            im_value               = ls_zci_cobl                 " Data for Filling Container
+          IMPORTING
+            ex_container           = lv_char960                 " Container
+          EXCEPTIONS
+            illegal_parameter_type = 1                " Invalid type for the parameter IM_VALUE
+            OTHERS                 = 2
+        ).
+
+        ls_ext2+30 = lv_char960.
+        APPEND ls_ext2 TO <ls_post>-exten.
+
+        CLEAR: ls_ext2,ls_zci_cobl.
+
+        ls_zci_cobl = VALUE #( zz_tipo_polizza = <ls_alv_data>-tipo_polizza
+                               posnr         = CONV posnr( 2 ) ).
+
+        ls_ext2-structure = 'ZCI_COBL'.
+
+        cl_abap_container_utilities=>fill_container_c(
+          EXPORTING
+            im_value               = ls_zci_cobl                 " Data for Filling Container
+          IMPORTING
+            ex_container           = lv_char960                 " Container
+          EXCEPTIONS
+            illegal_parameter_type = 1                " Invalid type for the parameter IM_VALUE
+            OTHERS                 = 2
+        ).
+
+        ls_ext2+30 = lv_char960.
+        APPEND ls_ext2 TO <ls_post>-exten.
 
         <ls_post>-currc = VALUE #(
         (
@@ -714,6 +815,7 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             is_head  = <ls_post>-header
             it_glacc = <ls_post>-items
             it_curre = <ls_post>-currc
+            it_exten = <ls_post>-exten
             iv_doc   = CONV #( <ls_post>-header-ref_doc_no )
             iv_buzei = <ls_post>-buzei
           IMPORTING
@@ -874,11 +976,41 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             value = if_salv_c_cell_type=>hotspot
         ).
 
-
         lo_column ?= lo_columns->get_column( 'BELNR_GTRAN' ).
         lo_column->set_cell_type(
             value = if_salv_c_cell_type=>hotspot
         ).
+
+        DATA(lv_text) = CONV string( 'Document Number COTEC'(018) ).
+        lo_column ?= lo_columns->get_column( 'BELNR' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
+        lv_text = 'Type COTEC'(019).
+        lo_column ?= lo_columns->get_column( 'DOC_TYPE' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
+        lv_text = 'G/L Account COTEC'(020).
+        lo_column ?= lo_columns->get_column( 'GL_ACCOUNT' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
+        lv_text = 'Conto alternativo'.
+        lo_column ?= lo_columns->get_column( 'ALTKT' ).
+        lo_column->set_short_text( 'Cont Alt.' ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
+        lv_text = 'Descr. Conto alternativo'.
+        lo_column ?= lo_columns->get_column( 'DESC' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
 
         IF r3 IS NOT INITIAL.
           lo_columns->get_column( 'STATUS' )->set_technical( ).
@@ -908,12 +1040,12 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
             ).
 
         lo_sort =
-        lo_sorts->add_sort(
-      EXPORTING
-        columnname = 'GL_ACCOUNT'                           " ALV CONTROL: FIELD NAME OF INTERNAL TABLE FIELD
-        position   = 2
-        subtotal   = if_salv_c_bool_sap=>true
-    ).
+          lo_sorts->add_sort(
+        EXPORTING
+          columnname = 'ALTKT'                           " ALV CONTROL: FIELD NAME OF INTERNAL TABLE FIELD
+          position   = 2
+          subtotal   = if_salv_c_bool_sap=>true
+      ).
 
         DATA(lo_aggr) = mo_salv->get_aggregations( ).
         DATA(lo_aggr_col) = lo_aggr->add_aggregation( columnname  = 'HSL' ).
@@ -958,12 +1090,14 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD call_bapi.
-    DATA: lt_return TYPE TABLE OF bapiret2,
-          lt_glacc  TYPE STANDARD TABLE OF bapiacgl09,
-          lt_curre  TYPE STANDARD TABLE OF bapiaccr09.
+    DATA: lt_return     TYPE TABLE OF bapiret2,
+          lt_glacc      TYPE STANDARD TABLE OF bapiacgl09,
+          lt_curre      TYPE STANDARD TABLE OF bapiaccr09,
+          lt_extension2 TYPE TABLE OF  bapiparex.
 
     lt_glacc = it_glacc.
     lt_curre = it_curre.
+    lt_extension2 = it_exten.
 
     IF iv_test = abap_true.
 
@@ -973,7 +1107,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         TABLES
           accountgl      = lt_glacc
           currencyamount = lt_curre
-          return         = lt_return.
+          return         = lt_return
+          extension2     = lt_extension2.
 
     ELSE.
 
@@ -985,7 +1120,8 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
         TABLES
           accountgl      = lt_glacc
           currencyamount = lt_curre
-          return         = lt_return.
+          return         = lt_return
+          extension2     = lt_extension2.
     ENDIF.
 
     DELETE ADJACENT DUPLICATES FROM lt_return COMPARING message.
@@ -1124,8 +1260,11 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
            hdr~bldat          AS doc_date,
 
            itm~buzei,
+           skb1~altkt,
+           skat~txt50         AS desc,
            itm~hkont          AS gl_account,
            itm~sgtxt          AS item_text,
+
            itm~pargb,
            itm~gsber          AS bus_area,
            itm~fb_segment     AS segment,
@@ -1140,6 +1279,19 @@ CLASS lcl_cont_tech_ivass IMPLEMENTATION.
       FROM zfi_t_hcont_tech AS hdr
       JOIN zfi_t_icont_tech AS itm
         ON hdr~awkey = itm~awkey
+
+      JOIN t001
+        ON t001~bukrs = hdr~bukrs
+
+      LEFT JOIN skb1
+        ON hdr~bukrs  = skb1~bukrs
+       AND skb1~saknr = itm~hkont
+
+      LEFT JOIN skat
+      ON skat~saknr = skb1~saknr
+        AND skat~ktopl = t001~ktopl
+        AND skat~spras = 'I'
+
       WHERE hdr~awkey IN @s_awkey
         AND hdr~bukrs IN @s_bukrs
         AND hdr~gjahr IN @s_gjahr
