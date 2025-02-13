@@ -18,20 +18,25 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   PARAMETERS :p_file TYPE string .
 SELECTION-SCREEN END OF BLOCK b1.
 
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
+  PARAMETERS :p_blart TYPE blart DEFAULT 'GF'.
+SELECTION-SCREEN END OF BLOCK b3.
+
 CLASS lcl_zfi_sofia DEFINITION FINAL.
   PUBLIC SECTION.
 
     TYPES: BEGIN OF ty_messages,
-             prog_nr TYPE numc5,
-             time    TYPE sy-uzeit,
-             bukrs   TYPE bukrs,
-             xblnr   TYPE xblnr,
-*             buzei   TYPE buzei,
-             icon    TYPE icon-id,
-             message TYPE bapi_msg,
-             belnr   TYPE belnr_d,
-             gjahr   TYPE gjahr,
-             xref2   TYPE xref2,
+             prog_nr    TYPE numc5,
+             excel_line TYPE numc10,
+             time       TYPE sy-uzeit,
+             bukrs      TYPE bukrs,
+             xblnr      TYPE xblnr,
+             xref2      TYPE xref2,
+             sgtxt      TYPE sgtxt,
+             icon       TYPE icon-id,
+             message    TYPE bapi_msg,
+             belnr      TYPE belnr_d,
+             gjahr      TYPE gjahr,
            END OF ty_messages.
 
     TYPES: BEGIN OF ty_post_bapi,
@@ -53,7 +58,7 @@ CLASS lcl_zfi_sofia DEFINITION FINAL.
                      CHANGING  iv_no_commit TYPE abap_bool OPTIONAL.
 
     METHODS : display_msg IMPORTING iv_no_dock TYPE abap_bool OPTIONAL.
-    METHODS: adjust_cols_msg.
+    METHODS: adjust_cols_msg IMPORTING iv_no_dock TYPE abap_bool .
 
   PRIVATE SECTION.
 
@@ -103,7 +108,7 @@ CLASS lcl_zfi_sofia DEFINITION FINAL.
              vbund       TYPE vbund,
              segment     TYPE segment,
              gsber       TYPE gsber,
-             fipos       TYPE fipos,
+             fipos       TYPE acdoca-fistl,
              xref2       TYPE xref2,
              xref1       TYPE xref1,
 
@@ -127,6 +132,7 @@ CLASS lcl_zfi_sofia DEFINITION FINAL.
                                 iv_bukrs   TYPE bukrs
                                 iv_gjahr   TYPE gjahr
                                 iv_xref2   TYPE xref2
+                                iv_sgtxt   TYPE sgtxt
                                 iv_doc     TYPE string
                       EXPORTING ev_err     TYPE abap_bool
                                 ev_obj_key TYPE bapiache09-obj_key.
@@ -203,10 +209,10 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
           WHEN p_disply.
 
-            IF lv_error = abap_true.
-              display_msg( iv_no_dock = abap_true ).
-              RETURN.
-            ENDIF.
+*            IF lv_error = abap_true.
+*              display_msg( iv_no_dock = abap_true ).
+*              RETURN.
+*            ENDIF.
             display_alv( ).
 
         ENDCASE.
@@ -329,19 +335,20 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
               WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
 
-    LOOP AT lt_strings ASSIGNING FIELD-SYMBOL(<ls_strings>) FROM 4.
 
-*      IF <ls_strings> IS INITIAL.
-*        CONTINUE.
-*      ENDIF.
+    lv_skip_itm = 8.
+
+    LOOP AT lt_strings ASSIGNING FIELD-SYMBOL(<ls_strings>) FROM 4.
+      DATA(lv_excel_line) = sy-tabix.
 
       IF <ls_strings> NP ';*'.
-        lv_skip_itm = 8.
-        CONTINUE.
-      ENDIF.
-
-      IF lv_skip_itm IS NOT INITIAL.
-        lv_skip_itm -= 1.
+        IF <ls_strings>+1 NP ';*' .
+          IF lv_skip_itm = 0.
+            lv_skip_itm = 8.
+          ENDIF.
+          lv_skip_itm -= 1.
+          CONTINUE.
+        ENDIF.
       ENDIF.
 
       CASE lv_skip_itm.
@@ -370,6 +377,10 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
         WHEN 0.
 
+*          IF <ls_strings> CO ';' .
+*            CONTINUE.
+*          ENDIF.
+
           SPLIT <ls_strings> AT ';' INTO
                                  DATA(lv_dummy)
                                  ls_split-bukrs_itm
@@ -396,38 +407,47 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                                  ls_split-xref2
                                  ls_split-xref1.
 
-          ls_split-valut = |{ ls_split-valut+6(4) }{ ls_split-valut+3(2) ALPHA = IN }{ ls_split-valut(2) ALPHA = IN }|.
+          IF ls_split-hkont IS INITIAL.
+            CONTINUE.
+          ENDIF.
+
+          ls_split-valut = COND #( WHEN ls_split-valut IS NOT INITIAL
+          THEN |{ ls_split-valut+6(4) }{ ls_split-valut+3(2) ALPHA = IN }{ ls_split-valut(2) ALPHA = IN }| ).
 
           TRANSLATE ls_split-wrsol USING ',.'.
           TRANSLATE ls_split-wrhab USING ',.'.
+          TRANSLATE ls_split-dmbtr USING ',.'.
+          TRANSLATE ls_split-dmbe2 USING ',.'.
 
-          lv_hkont = |{ ls_split-hkont ALPHA = IN }|.
+          CONDENSE ls_split-hkont NO-GAPS.
+          lv_hkont = to_upper( ls_split-hkont ).
 
-          READ TABLE lt_glacc TRANSPORTING NO FIELDS WITH TABLE KEY z_esolver_acc = lv_hkont.
+          READ TABLE lt_glacc ASSIGNING FIELD-SYMBOL(<ls_glacc>) WITH KEY z_esolver_acc = lv_hkont BINARY SEARCH.
           IF sy-subrc <> 0.
 
-            lv_hkont = to_upper( lv_hkont ).
-
-            INSERT VALUE #( z_esolver_acc = lv_hkont ) INTO TABLE lt_glacc ASSIGNING FIELD-SYMBOL(<ls_glacc>).
+            INSERT VALUE #( z_esolver_acc = lv_hkont ) INTO TABLE lt_glacc ASSIGNING <ls_glacc>.
 
             SELECT SINGLE z_cont_operativo
               FROM zfi_sofia_cont
               INTO <ls_glacc>-z_cont_operativo
               WHERE z_esolver_acc = lv_hkont.
+          ENDIF.
 
-            IF <ls_glacc>-z_cont_operativo IS INITIAL.
+          IF <ls_glacc>-z_cont_operativo IS INITIAL.
 
-              APPEND VALUE #( time    = sy-uzeit
-                bukrs   = ls_split-bukrs
-                xblnr   = ls_split-xblnr
-*                buzei   = 1
-                icon    =  icon_red_light
-                message = |Errore durante la trascodifica del conto { lv_hkont }|
-                xref2   = ls_split-xref2
-                 ) TO mt_messages.
+            APPEND VALUE #(
+              prog_nr    = lv_prog_nr
+              excel_line = lv_excel_line
+              time       = sy-uzeit
+              bukrs      = ls_split-bukrs
+              xblnr      = ls_split-xblnr
+              xref2      = ls_split-xref2
+              sgtxt      = ls_split-sgtxt
+              icon       = icon_red_light
+              message    = |Errore durante la trascodifica del conto { lv_hkont }|
+               ) TO mt_messages.
 
-              lv_error = abap_true.
-            ENDIF.
+            lv_error = abap_true.
           ENDIF.
 
           APPEND VALUE #( prog_nr     = lv_prog_nr
@@ -454,7 +474,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                           dmbe2       = ls_split-dmbe2
                           mwskz       = ls_split-mwskz
                           txjcd       = ls_split-txjcd
-                          kostl       = ls_split-kostl
+                          kostl       = |{ ls_split-kostl ALPHA = IN }|
                           prctr       = ls_split-prctr
                           aufnr       = ls_split-aufnr
                           ps_posid    = ls_split-ps_posid
@@ -472,9 +492,14 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                         ) TO mt_alv_data.
 
       ENDCASE.
+
+      IF lv_skip_itm IS NOT INITIAL.
+        lv_skip_itm -= 1.
+      ENDIF.
+
     ENDLOOP.
 
-    IF mt_alv_data IS INITIAL.
+    IF mt_alv_data IS INITIAL OR lv_error IS NOT INITIAL.
       RETURN.
     ENDIF.
 
@@ -625,6 +650,12 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
         lo_column->set_medium_text( CONV #( lv_text ) ).
         lo_column->set_long_text( CONV #( lv_text ) ).
 
+        lv_text = 'Conto COGE Giroconto'.
+        lo_column ?= lo_columns->get_column( 'HKONT_GTRAN' ).
+        lo_column->set_short_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_long_text( CONV #( lv_text ) ).
+
         lo_columns->get_column( columnname = 'WRSOL' )->set_currency( value = 'EUR' ).
         lo_columns->get_column( columnname = 'WRHAB' )->set_currency_column( value = 'WAERS' ).
 
@@ -756,7 +787,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                                   profit_ctr      = <ls_alv_data>-prctr
                                   orderid         = <ls_alv_data>-aufnr
                                   wbs_element     = <ls_alv_data>-ps_posid
-                                  cmmt_item       = <ls_alv_data>-fipos
+                                  funds_ctr       = <ls_alv_data>-fipos
                                   ref_key_2       = <ls_alv_data>-xref2
                                   ref_key_1       = <ls_alv_data>-xref1
                                   ) TO <ls_post_bapi_main>-items.
@@ -766,7 +797,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                          curr_type  = '00'
                          currency   = <ls_alv_data>-waers
                          amt_doccur = <ls_alv_data>-wrsol
-                         exch_rate  = <ls_alv_data>-kursf_ext
+                         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
                           ) TO <ls_post_bapi_main>-currc ASSIGNING FIELD-SYMBOL(<ls_bapi_accr>).
 
         IF <ls_alv_data>-hkont_gtran IS INITIAL .
@@ -780,8 +811,8 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                      comp_code    = <ls_alv_data>-bukrs
                      doc_date     = <ls_alv_data>-bldat
                      pstng_date   = <ls_alv_data>-budat
-                     doc_type     = <ls_alv_data>-blart
-                     fis_period    = <ls_alv_data>-monat
+                     doc_type     = p_blart
+                     fis_period   = <ls_alv_data>-monat
                      header_txt   = <ls_alv_data>-bktxt
                      ref_doc_no   = <ls_alv_data>-xblnr
                                ).
@@ -805,7 +836,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
           profit_ctr      = <ls_alv_data>-prctr
           orderid         = <ls_alv_data>-aufnr
           wbs_element     = <ls_alv_data>-ps_posid
-          cmmt_item       = <ls_alv_data>-fipos
+          funds_ctr       = <ls_alv_data>-fipos
           ref_key_2       = <ls_alv_data>-xref2
           ref_key_1       = <ls_alv_data>-xref1
           )
@@ -827,7 +858,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
           profit_ctr      = <ls_alv_data>-prctr
           orderid         = <ls_alv_data>-aufnr
           wbs_element     = <ls_alv_data>-ps_posid
-          cmmt_item       = <ls_alv_data>-fipos
+          funds_ctr       = <ls_alv_data>-fipos
           ref_key_2       = <ls_alv_data>-xref2
           ref_key_1       = <ls_alv_data>-xref1
                       ) ) .
@@ -838,13 +869,13 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
          curr_type  = '00'
          currency   = <ls_alv_data>-waers
          amt_doccur = <ls_bapi_accr>-amt_doccur * -1
-         exch_rate  = <ls_bapi_accr>-exch_rate
+         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
          )
          ( itemno_acc = 2
          curr_type  = '00'
          currency   = <ls_alv_data>-waers
          amt_doccur = <ls_bapi_accr>-amt_doccur
-         exch_rate  = <ls_bapi_accr>-exch_rate
+         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
 ) ).
 
       ENDLOOP.
@@ -867,6 +898,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
             iv_bukrs = <ls_post>-header-comp_code
             iv_gjahr = <ls_post>-header-pstng_date(4)
             iv_xref2 = <ls_post>-items[ 1 ]-ref_key_2
+            iv_sgtxt = <ls_post>-items[ 1 ]-item_text
           IMPORTING
             ev_err     = lv_error
             ev_obj_key = lv_obj_key
@@ -996,7 +1028,6 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                       time    = lv_uzeit
                       bukrs   = iv_bukrs
                       xblnr   = iv_doc
-*                      buzei   = iv_buzei
                       icon    = SWITCH #(
                       <ls_return>-type
                         WHEN 'E' THEN icon_red_light
@@ -1005,6 +1036,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                       message = <ls_return>-message
                       belnr   = COND #( WHEN ev_obj_key <> '$' THEN ev_obj_key(10) )
                       xref2   = iv_xref2
+                      sgtxt   = iv_sgtxt
                        ) TO mt_messages.
 
       IF  <ls_return>-type CA 'EAX'.
@@ -1123,7 +1155,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
     ENDIF.
 
-    adjust_cols_msg( ).
+    adjust_cols_msg( iv_no_dock = iv_no_dock ).
 
     lo_events = mo_salv_msg->get_event( ).
     SET HANDLER handle_logs_ucomm
@@ -1199,15 +1231,30 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
     TRY.
 
-        DATA(lv_text) = 'ID lotto'.
+        DATA(lv_text) = CONV scrtext_m( 'ID lotto' ).
         lo_column ?= lo_cols->get_column( 'PROG_NR' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
-        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( lv_text ).
         lo_column->set_long_text( CONV #( lv_text ) ).
         lo_column->set_key( ).
 
+        lo_column ?= lo_cols->get_column( 'EXCEL_LINE' ).
+        IF iv_no_dock IS NOT INITIAL.
+          lv_text = 'Riga Excel'.
+          lo_column->set_short_text( CONV #( lv_text ) ).
+          lo_column->set_medium_text( lv_text ).
+          lo_column->set_long_text( CONV #( lv_text ) ).
+          lo_column->set_key( ).
+        ELSE.
+          lo_column->set_technical( ).
+        ENDIF.
+
         lo_column ?= lo_cols->get_column( 'TIME' ).
-        lo_column->set_key( ).
+        IF iv_no_dock IS NOT INITIAL.
+          lo_column->set_technical( ).
+        ELSE.
+          lo_column->set_key( ).
+        ENDIF.
 
         lo_column ?= lo_cols->get_column( 'BUKRS' ).
         lo_column->set_key( ).
@@ -1218,23 +1265,26 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
         lv_text = CONV scrtext_s( 'Status'(006) ).
         lo_column ?= lo_cols->get_column( 'ICON' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
-        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( lv_text ).
         lo_column->set_long_text( CONV #( lv_text ) ).
         lo_column->set_icon( ).
 
         lv_text = 'Message'(007).
         lo_column ?= lo_cols->get_column( 'MESSAGE' ).
         lo_column->set_short_text( CONV #( lv_text ) ).
-        lo_column->set_medium_text( CONV #( lv_text ) ).
+        lo_column->set_medium_text( lv_text ).
         lo_column->set_long_text( CONV #( lv_text ) ).
 
         lo_column ?= lo_cols->get_column( 'BELNR' ).
-        lo_column->set_cell_type(
-            value = if_salv_c_cell_type=>hotspot
-        ).
+        IF iv_no_dock IS NOT INITIAL.
+          lo_column->set_technical( ).
+        ELSE.
+          lo_column->set_cell_type(
+           value = if_salv_c_cell_type=>hotspot
+       ).
+        ENDIF.
 
         lo_cols->get_column( 'GJAHR' )->set_technical( ).
-        lo_cols->get_column( 'BUZEI' )->set_technical( ).
 
       CATCH cx_salv_not_found.
     ENDTRY.
@@ -1242,6 +1292,14 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN .
+    IF screen-name CS 'P_BLART'.
+      screen-input = 0.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
   lcl_zfi_sofia=>value_request( ).
