@@ -5,7 +5,7 @@
 *&
 *&
 *&---------------------------------------------------------------------*
-REPORT ztest_bcf.
+REPORT ztest_bcf2.
 
 CLASS lcl_cr_char DEFINITION.
   PUBLIC SECTION.
@@ -77,7 +77,7 @@ CLASS lcl_cr_char IMPLEMENTATION.
 
   METHOD fill_data.
 
-    mt_tech_hier = VALUE #(
+   mt_tech_hier = VALUE #(
     charact = 'ATWRT1'
  ( id =  1           tech_value = 'ATWRT1'     tech_type  = 'H0'       )
  ( id =  2  pid = 1  tech_value = 'C_TL_BCF'   tech_type  = 'H'        )
@@ -102,8 +102,9 @@ CLASS lcl_cr_char IMPLEMENTATION.
  ( id = 21  pid = 2  tech_value = '8'          conv_value = 'ROC'      )
  ( id = 22  pid = 2  tech_value = '9'          conv_value = 'BIN'      )
  ( id = 23  pid = 1  tech_value = 'BASE'       tech_type  = 'H0' conv_value = 'BASE'      )
-    charact = 'ATWRT2'
- ( id =  1           tech_value = 'ATWRT2'     tech_type  = 'H0' conv_value = 'RIL' )
+
+  charact = 'ATWRT2'
+( id =  1           tech_value = 'ATWRT2'     tech_type  = 'H0' conv_value = 'RIL' )
  ( id =  2  pid = 1  tech_value = 'BASE'       tech_type  = 'H0' conv_value = 'C_COLORE'       )
  ( id =  3  pid = 2  tech_value = 'C_PO_BCF'   tech_type  = 'H'         )
  ( id =  4  pid = 3  tech_value = 'PP'         tech_type  = 'H1'        )
@@ -118,8 +119,10 @@ CLASS lcl_cr_char IMPLEMENTATION.
  ( id = 13  pid = 3  tech_value = 'MTX'        conv_value = 'MTX'       )
  ( id = 14  pid = 3  tech_value = 'PBT'        conv_value = 'CORTERRA'  )
  ( id = 15  pid = 3  tech_value = 'PLA'        conv_value = 'PLA'       )
- ( id = 16  pid = 2  tech_value = 'C_COLORE'   tech_type  = 'H' conv_value = 'C_TIT_BCF' )
- ( id = 17  pid = 16 tech_value = 'C_TIT_BCF'  tech_type  = 'H' conv_value = 'TM ALTRO' )
+
+ ( id = 16  pid = 2  tech_value = 'C_COLORE'   tech_type  = 'H1' conv_value = 'C_TIT_BCF' )
+
+( id = 17  pid = 16 tech_value = 'C_TIT_BCF'  tech_type  = 'H' conv_value = 'TM ALTRO' )
  ( id = 18  pid = 17 tech_value = '1000'       conv_value = 'TM TP' )
  ( id = 19  pid = 17 tech_value = '1020'       conv_value = 'TM TP' )
  ( id = 20  pid = 17 tech_value = '1350'       conv_value = 'TM CC' )
@@ -128,6 +131,7 @@ CLASS lcl_cr_char IMPLEMENTATION.
  ( id = 23  pid = 22 tech_value = 'C_NBA_BCF'  tech_type  = 'H' conv_value = 'TM ALTRO' )
  ( id = 24  pid = 23 tech_value = '128'        conv_value = 'TM AUTO' )
  ( id = 25  pid = 23 tech_value = '84'         conv_value = 'TM AUTO' )
+
  ( id = 26  pid = 2  tech_value = 'C_TIT_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
  ( id = 27  pid = 26 tech_value = '1000'       conv_value = 'GG LEN' )
  ( id = 28  pid = 26 tech_value = '1200'       conv_value = 'GG LEN' )
@@ -138,29 +142,37 @@ CLASS lcl_cr_char IMPLEMENTATION.
  ( id = 33  pid = 26 tech_value = '650'        tech_type  = 'H1' )
  ( id = 34  pid = 33 tech_value = 'C_NBA_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
  ( id = 35  pid = 34 tech_value = '64'         conv_value = 'GG VEL' )
- ( id = 35  pid = 34 tech_value = '42'         conv_value = 'GG LEN' )
- ( id = 36  pid = 1  tech_value = 'ROCC SSM'   tech_type  = 'H0' conv_value = 'C_COLORE' )
- ( id = 37  pid = 36 tech_value = 'C_COLORE'   tech_type  = 'H'  conv_value = 'C_TI_BCF' )
- ( id = 38  pid = 37 tech_value = 'C_TI_BCF'   tech_type  = 'H'  conv_value = 'TM ALTRO' )
- ( id = 39  pid = 38 tech_value = '1000'       conv_value = 'TM TP' )
- ( id = 40  pid = 38 tech_value = '1020'       conv_value = 'TM TP' )
- ( id = 41  pid = 38 tech_value = '1350'       conv_value = 'TM CC' )
- ( id = 42  pid = 38 tech_value = '700'        conv_value = 'TM 700' )
- ( id = 43  pid = 42 tech_value = 'C_NBA_BCF'  tech_type  = 'H' conv_value = 'TM ALTRO' )
- ( id = 44  pid = 43 tech_value = '128'        conv_value = 'TM AUTO' )
- ( id = 45  pid = 43 tech_value = '84'         conv_value = 'TM AUTO' )
- ( id = 46  pid = 36 tech_value = 'C_TIT_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
- ( id = 47  pid = 46 tech_value = '1000'       conv_value = 'GG LEN' )
- ( id = 48  pid = 46 tech_value = '1200'       conv_value = 'GG LEN' )
- ( id = 49  pid = 46 tech_value = '1330'       conv_value = 'GG LEN' )
- ( id = 50  pid = 46 tech_value = '700'        conv_value = 'GG VEL' )
- ( id = 51  pid = 46 tech_value = '900'        conv_value = 'GG VEL' )
- ( id = 52  pid = 46 tech_value = '1300'       conv_value = 'GG VEL' )
- ( id = 53  pid = 46 tech_value = '650'        tech_type  = 'H1' )
- ( id = 54  pid = 53 tech_value = 'C_NBA_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
- ( id = 55  pid = 54 tech_value = '64'         conv_value = 'GG VEL' )
- ( id = 55  pid = 54 tech_value = '42'         conv_value = 'GG LEN' )
- ( id = 56  pid = 1  tech_value = 'RIL'        conv_value = 'RIL' )
+ ( id = 36  pid = 34 tech_value = '42'         conv_value = 'GG LEN' )
+
+
+( id = 37  pid = 1  tech_value = 'ROCC SSM'   tech_type  = 'H0' conv_value = 'C_COLORE' )
+( id = 38  pid = 37 tech_value = 'C_COLORE'  tech_type  = 'H1'  conv_value = 'C_TI_BCF' )
+( id = 39  pid = 38 tech_value = 'C_TI_BCF'   tech_type  = 'H'  conv_value = 'TM ALTRO' )
+
+( id = 40  pid = 39 Tech_value = '1000'       conv_value = 'TM TP' )
+ ( id = 41  pid = 39 tech_value = '1020'       conv_value = 'TM TP' )
+ ( id = 42  pid = 39 tech_value = '1350'       conv_value = 'TM CC' )
+ ( id = 43  pid = 39 tech_value = '700'        conv_value = 'TM 700' )
+ ( id = 44  pid = 39 tech_value = '1300'        tech_type  = 'H1' )
+ ( id = 45  pid = 44 tech_value = 'C_NB_BCF'  tech_type  = 'H' conv_value = 'TM ALTRO' )
+ ( id = 46  pid = 45 tech_value = '128'        conv_value = 'TM AUTO' )
+ ( id = 47  pid = 45 tech_value = '84'         conv_value = 'TM AUTO' )
+
+ ( id = 48  pid = 38 tech_value = 'C_TI_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
+ ( id = 49  pid = 48 tech_value = '1000'       conv_value = 'GG LEN' )
+ ( id = 50  pid = 48 tech_value = '1200'       conv_value = 'GG LEN' )
+ ( id = 51  pid = 48 tech_value = '1330'       conv_value = 'GG LEN' )
+ ( id = 52  pid = 48 tech_value = '700'        conv_value = 'GG VEL' )
+ ( id = 53  pid = 48 tech_value = '900'        conv_value = 'GG VEL' )
+ ( id = 54  pid = 48 tech_value = '1300'       conv_value = 'GG VEL' )
+ ( id = 55  pid = 48 tech_value = '650'        tech_type  = 'H1' )
+ ( id = 56  pid = 55 tech_value = 'C_NB_BCF'  tech_type  = 'H' conv_value = 'GG ALTRO' )
+ ( id = 57  pid = 56 tech_value = '64'         conv_value = 'GG VEL' )
+ ( id = 58  pid = 56 tech_value = '42'         conv_value = 'GG LEN' )
+
+ ( id = 59  pid = 1 tech_value = 'RIL'  tech_type  = 'H0'  conv_value = 'RIL' )
+
+
 ).
 
     SORT mt_tech_hier BY charact pid id.
@@ -178,6 +190,7 @@ CLASS lcl_cr_char IMPLEMENTATION.
     ).
 
   ENDMETHOD.
+
   METHOD use_tech_hier.
 
     READ TABLE mt_tech_hier TRANSPORTING NO FIELDS
@@ -204,14 +217,41 @@ CLASS lcl_cr_char IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-      CASE ls_data-tech_type.
-        WHEN 'H1'.
+     CASE ls_data-tech_type.
+*        WHEN 'H1'.
+*
+*          use_tech_hier(
+*            EXPORTING
+*              iv_charact = iv_charact
+*              iv_pid     = ls_data-id
+*          ).
+ WHEN 'H1'.
+        " Process sub-hierarchy node
+        DATA(ls_data_hier) = VALUE ty_data(
+          charact    = ls_data-charact
+          hier_name  = ls_data-tech_value
+          node_pid   = lv_last_id
+          tech_id    = ls_data-id
+          tech_pid   = ls_data-pid
+          tech_value = ls_data-tech_value
+          conv_value = ls_data-conv_value
+        ).
 
-          use_tech_hier(
-            EXPORTING
-              iv_charact = iv_charact
-              iv_pid     = ls_data-id
-          ).
+        CASE iv_charact.
+          WHEN 'ATWRT1'.
+            APPEND ls_data_hier TO mt_data_hier1.
+            DATA(lv_h_key) = lines( mt_data_hier1 ).
+          WHEN OTHERS.
+            APPEND ls_data_hier TO mt_data_hier2.
+            lv_h_key = lines( mt_data_hier2 ).
+        ENDCASE.
+
+        " Recursively process children of this node
+        use_tech_hier(
+          EXPORTING
+            iv_charact = iv_charact
+            iv_pid     = ls_data-id
+        ).
 
         WHEN 'H'.
 
@@ -223,7 +263,19 @@ CLASS lcl_cr_char IMPLEMENTATION.
               et_hier_val    = DATA(lt_hier)
           ).
 
-          DATA(ls_data_hier) = VALUE ty_data(
+
+        IF   ls_data-tech_type = 'H'  AND  lt_hier IS INITIAL.
+          LOOP AT mt_tech_hier INTO DATA(ls_child) WHERE Pid = ls_data-id  AND charact = 'ATWRT2'.
+
+            APPEND VALUE #(
+              value_char  = ls_child-tech_value
+              description = ls_child-tech_value
+            ) TO lt_hier.
+
+          ENDLOOP.
+        ENDIF.
+
+          ls_data_hier = VALUE ty_data(
             charact    = ls_data-charact
             hier_name  = lv_descr
             node_pid   = lv_last_id
@@ -236,14 +288,14 @@ CLASS lcl_cr_char IMPLEMENTATION.
           CASE iv_charact.
             WHEN 'ATWRT1'.
               APPEND ls_data_hier TO mt_data_hier1.
-              DATA(lv_h_key) = lines( mt_data_hier1 ).
+              lv_h_key = lines( mt_data_hier1 ).
             WHEN OTHERS.
               APPEND ls_data_hier TO mt_data_hier2.
               lv_h_key = lines( mt_data_hier2 ).
           ENDCASE.
 
 
-          LOOP AT lt_hier ASSIGNING FIELD-SYMBOL(<ls_hier>).
+            LOOP AT lt_hier ASSIGNING FIELD-SYMBOL(<ls_hier>).
 
             READ TABLE mt_tech_hier INTO DATA(ls_hier_val)
               WITH KEY charact    = iv_charact
@@ -279,7 +331,6 @@ CLASS lcl_cr_char IMPLEMENTATION.
 
 
           ENDLOOP.
-
 
         WHEN 'H0'.
 
@@ -320,6 +371,10 @@ CLASS lcl_cr_char IMPLEMENTATION.
     DATA: lt_return TYPE STANDARD TABLE OF bapiret2,
           lt_descr  TYPE STANDARD TABLE OF bapicharactdescr.
 
+    DATA: lt_hier LIKE mt_tech_hier,
+      lv_color TYPE string,
+      ls_hier LIKE LINE OF mt_tech_hier.
+
     CALL FUNCTION 'BAPI_CHARACT_GETDETAIL'
       EXPORTING
         charactname        = iv_charactname
@@ -337,6 +392,11 @@ CLASS lcl_cr_char IMPLEMENTATION.
     IF lt_descr IS NOT INITIAL.
       ev_descr = lt_descr[ 1 ]-description.
     ENDIF.
+
+    loop at mt_tech_hier ASSIGNING FIELD-SYMBOL(<ls_tech_hier>).
+
+
+      endloop.
 
   ENDMETHOD.
   METHOD get_nodes.
