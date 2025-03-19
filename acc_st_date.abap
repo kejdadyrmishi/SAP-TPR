@@ -61,9 +61,9 @@ METHOD if_ex_workorder_update~at_save.
               <ls_data>-isdd = <ls_data1>-isdd.
               <ls_data>-isdz = sy-uzeit.
 
-              " Clear <ls_data1>-isdd only if isdz, iedd, and iedz are empty
-              IF <ls_data1>-isdz IS INITIAL AND <ls_data1>-iedd IS INITIAL AND <ls_data1>-iedz IS INITIAL.
-                CLEAR <ls_data1>-isdd.
+              " Clear <ls_data1>-isdd only if isdz, iedd, or iedz are empty
+              IF <ls_data1>-isdz IS INITIAL OR <ls_data1>-iedd IS INITIAL OR <ls_data1>-iedz IS INITIAL.
+                CLEAR : <ls_data1>-isdd , <ls_data1>-isdz.
               ENDIF.
 
               EXIT.
