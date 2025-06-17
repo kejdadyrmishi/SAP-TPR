@@ -7,80 +7,160 @@
 *&---------------------------------------------------------------------*
 REPORT zkd_test.
 
-DATA: lt_data    TYPE REF TO data,
-      lt_fcat    TYPE lvc_t_fcat,
-      lv_lines   TYPE i,
-      lv_idx     TYPE i,
-      lv_col_idx TYPE i,
-      ls_fcat    TYPE lvc_s_fcat.
+*----------------------------------------------------------------------*
+*       CLASS lcl_fcat_write DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_fcat_write DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS execute.
 
-FIELD-SYMBOLS: <lt_table> TYPE STANDARD TABLE,
-               <fs_field> TYPE any,
-               <fs_line>  TYPE any,
-               <fs_value> TYPE any.
+  PRIVATE SECTION.
+
+    TYPES : BEGIN OF ty_data,
+              matnr TYPE matnr,
+              maktx TYPE maktx,
+              ebeln TYPE ebeln,
+              netwr TYPE bwert,
+              waers TYPE waers,
+            END OF ty_data.
+
+    DATA: mt_result TYPE STANDARD TABLE OF ty_data,
+          mt_fcat   TYPE lvc_t_fcat.
+
+    METHODS:       extract_data,
+      display_output,
+      get_fcat.
+
+ENDCLASS.                    "
+
+DATA go_fcat_write TYPE REF TO lcl_fcat_write.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_fcat_write IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_fcat_write IMPLEMENTATION.
+
+  METHOD execute.
+    extract_data( ).
+    display_output( ).
+
+  ENDMETHOD.                    "execute
+
+  METHOD extract_data.
+
+    SELECT
+      mara~matnr,
+      makt~maktx,
+      ekpo~ebeln,
+      ekpo~netwr,
+      ekko~waers
+      UP TO 10 ROWS
+  INTO TABLE @mt_result
+  FROM mara
+  LEFT JOIN makt
+  ON makt~matnr = mara~matnr
+  AND makt~spras = @sy-langu
+  JOIN ekpo
+  ON ekpo~matnr = mara~matnr
+  JOIN ekko
+  ON ekko~ebeln = ekpo~ebeln .
+
+  ENDMETHOD.                    "extract_data
+
+  METHOD get_fcat.
+
+    mt_fcat = VALUE lvc_t_fcat(
+  ( fieldname = 'MATNR' ref_table = 'MARA'  col_opt = 'X' )
+  ( fieldname = 'MAKTX' ref_table = 'MAKT'  col_opt = 'X'  )
+  ( fieldname = 'EBELN' ref_table = 'EKPO'  col_opt = 'X'  )
+  ( fieldname = 'NETWR' ref_table = 'EKPO'  cfieldname = 'WAERS'  col_opt = 'X'  )
+  ( fieldname = 'WAERS' ref_table = 'EKKO'  col_opt = 'X'  ) ).
+
+  ENDMETHOD.
 
 
-lt_fcat = VALUE lvc_t_fcat(
-  ( fieldname = 'MATNR' coltext = 'Material' outputlen = 10 )
-  ( fieldname = 'MTART' coltext = 'Type' outputlen = 5 )
-).
+  METHOD display_output.
 
-cl_alv_table_create=>create_dynamic_table(
-  EXPORTING
-*    i_style_table             =     " Add Style Table
-    it_fieldcatalog           = lt_fcat    " Field Catalog
-*    i_length_in_byte          =     " Boolean Variable (X=True, Space=False)
-  IMPORTING
-    ep_table                  = lt_data    " Pointer to Dynamic Data Table
-*    e_style_fname             =     " ALV Control: Field Name of Internal Table Field
-  EXCEPTIONS
-    generate_subpool_dir_full = 1
-    OTHERS                    = 2
-).
-IF sy-subrc <> 0.
-* MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
-*            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
-ENDIF.
+    DATA: lv_lines TYPE i,
+          lv_index TYPE i.
 
-ASSIGN lt_data->* TO <lt_table>.
+    FIELD-SYMBOLS: <fs_value> TYPE any.
 
-DATA: ls_wa TYPE REF TO data.
-CREATE DATA ls_wa LIKE LINE OF <lt_table>.
-ASSIGN ls_wa->* TO <fs_line>.
-
-ASSIGN COMPONENT 'MATNR' OF STRUCTURE <fs_line> TO <fs_field>.
-<fs_field> = 'MAT1'.
-
-ASSIGN COMPONENT 'MTART' OF STRUCTURE <fs_line> TO <fs_field>.
-<fs_field> = 'FERT'.
-
-APPEND <fs_line> TO <lt_table>.
-
-ASSIGN COMPONENT 'MATNR' OF STRUCTURE <fs_line> TO <fs_field>.
-<fs_field> = 'MAT2'.
-
-ASSIGN COMPONENT 'MTART' OF STRUCTURE <fs_line> TO <fs_field>.
-<fs_field> = 'FERT2'.
-
-APPEND <fs_line> TO <lt_table>.
-
-DESCRIBE TABLE <lt_table> LINES lv_lines.
-
-lv_idx = 1.
-DO lv_lines TIMES.
-  READ TABLE <lt_table> ASSIGNING <fs_line> INDEX lv_idx.
-  IF sy-subrc <> 0.
-    EXIT.
-  ENDIF.
-
-  LOOP AT lt_fcat INTO ls_fcat.
-    ASSIGN COMPONENT ls_fcat-fieldname OF STRUCTURE <fs_line> TO <fs_value>.
-    IF sy-subrc = 0.
-      WRITE <fs_value>.
-      WRITE ' '.
+    IF mt_result IS INITIAL.
+      WRITE: / 'No data to display.'.
+      RETURN.
     ENDIF.
-  ENDLOOP.
 
-  NEW-LINE.
-  lv_idx = lv_idx + 1.
-ENDDO.
+    get_fcat( ).
+
+*    DATA ls_out TYPE ty_data.
+*    DATA lo_rtti_struct TYPE REF TO cl_abap_structdescr.
+**DATA(lo_rtti_struct) = cl_rodps_odp_rt=>get_structdescr_from_input( ls_out ).
+**  CL_GENIOS_CUST_PARAMETER    GET_STRUCT_DESCR
+*    DATA(lo_typedescr) = cl_abap_structdescr=>describe_by_data( ls_out ).
+*    IF ( lo_typedescr->kind = cl_abap_typedescr=>kind_struct ).
+*      lo_rtti_struct ?= lo_typedescr.
+*      DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_rtti_struct ).
+*    ENDIF.
+*    WRITE : / '|'.
+*    LOOP AT lt_dfies ASSIGNING FIELD-SYMBOL(<ls_test>).
+*      DATA(lv_outputlength) = <ls_test>-outputlen.
+**      DATA(lv_string) = CONV string( <ls_test>-scrtext_l ).
+**      WRITE:  lv_string , '|'.
+*      WRITE : |{ <ls_test>-scrtext_l WIDTH = lv_outputlength }| , '|'.
+*    ENDLOOP.
+
+    WRITE : / '|'.
+    LOOP AT mt_fcat ASSIGNING FIELD-SYMBOL(<ls_fcat>).
+      DATA(lv_string) = CONV string( <ls_fcat>-coltext ).
+      WRITE:   lv_string  , '|'.
+    ENDLOOP.
+
+    WRITE : sy-uline.
+
+    DESCRIBE TABLE mt_result LINES lv_lines.
+
+    lv_index = 1.
+    DO lv_lines TIMES.
+      READ TABLE mt_result ASSIGNING FIELD-SYMBOL(<ls_result>) INDEX lv_index.
+      IF sy-subrc <> 0.
+        EXIT.
+      ENDIF.
+
+      WRITE : / '|'.
+      LOOP AT mt_fcat ASSIGNING FIELD-SYMBOL(<ls_fcat>).
+        ASSIGN COMPONENT <ls_fcat>-fieldname OF STRUCTURE <ls_result> TO <fs_value>.
+        IF sy-subrc = 0.
+          WRITE : <fs_value> ,'|'.
+
+
+        ENDIF.
+      ENDLOOP.
+
+*      LOOP AT lt_dfies ASSIGNING <ls_test>.
+*        ASSIGN COMPONENT <ls_test>-fieldname OF STRUCTURE <ls_result> TO <fs_value>.
+*        IF sy-subrc = 0.
+**          WRITE : <fs_value> ,'|'.
+*          lv_outputlength = <ls_test>-outputlen.
+*          WRITE :|{ <fs_value> WIDTH = lv_outputlength }| , '|'.
+*
+*        ENDIF.
+*      ENDLOOP.
+
+      WRITE : sy-uline.
+      lv_index = lv_index + 1.
+    ENDDO.
+
+  ENDMETHOD.
+
+
+ENDCLASS.
+
+
+START-OF-SELECTION.
+  CREATE OBJECT go_fcat_write.
+  go_fcat_write->execute( ).
