@@ -120,16 +120,12 @@ CLASS lcl_fcat_write IMPLEMENTATION.
           END OF ty_tab_length.
 
     FIELD-SYMBOLS: <fs_value>    TYPE any,
-                   <ls_result>   TYPE any,
-                   <fs_currency> TYPE any,
-                   <ls_fcat>     TYPE lvc_s_fcat.
+                   <fs_currency> TYPE any.
 
-    DATA: lv_len   TYPE i,
-          lv_lines TYPE i,
-          lv_index TYPE i.
-
-    DATA: lv_maxlen         TYPE i,
-          lt_widths         TYPE STANDARD TABLE OF ty_tab_length,
+    DATA: lv_len            TYPE i,
+          lv_maxlen         TYPE i,
+          lt_widths         TYPE SORTED TABLE OF ty_tab_length
+          WITH UNIQUE KEY fieldname,
           lv_formatted_text TYPE c LENGTH 10.
 
     IF mt_result IS INITIAL.
@@ -139,35 +135,43 @@ CLASS lcl_fcat_write IMPLEMENTATION.
 
     get_fcat( ).
 
-    LOOP AT mt_fcat ASSIGNING <ls_fcat>.
-      lv_maxlen = strlen( <ls_fcat>-coltext ).
-      LOOP AT mt_result ASSIGNING <ls_result>.
+    LOOP AT mt_result ASSIGNING FIELD-SYMBOL(<ls_result>).
+
+      LOOP AT mt_fcat ASSIGNING FIELD-SYMBOL(<ls_fcat>).
+
+        lv_maxlen = strlen( <ls_fcat>-coltext ).
+
         ASSIGN COMPONENT <ls_fcat>-fieldname OF STRUCTURE <ls_result> TO <fs_value>.
         IF sy-subrc = 0.
+
           lv_len = strlen( CONV string( <fs_value> ) ).
           IF lv_len > lv_maxlen.
             lv_maxlen = lv_len + 2.
           ENDIF.
+
+        ENDIF.
+
+        READ TABLE lt_widths ASSIGNING FIELD-SYMBOL(<lv_width>)
+                             WITH TABLE KEY fieldname = <ls_fcat>-fieldname.
+        IF sy-subrc <> 0.
+          INSERT VALUE #( fieldname = <ls_fcat>-fieldname
+               length    = lv_maxlen ) INTO TABLE lt_widths.
+        ELSE.
+          CONTINUE.
         ENDIF.
       ENDLOOP.
-      APPEND VALUE #( fieldname = <ls_fcat>-fieldname
-                      length    = lv_maxlen ) TO lt_widths.
-
     ENDLOOP.
 
     DATA(lv_total_length) = REDUCE i( INIT lv_acc = 1
                                        FOR <ls_width> IN lt_widths
                                        NEXT lv_acc = lv_acc + <ls_width>-length + 3 ).
 
-
-*    DATA(lv_total_length) = 1.
-*    LOOP AT lt_widths ASSIGNING FIELD-SYMBOL(<ls_width>).
-*      lv_total_length = lv_total_length + <ls_width>-length + 3.
-*    ENDLOOP.
-
     WRITE: / '|'.
     LOOP AT mt_fcat ASSIGNING <ls_fcat>.
-      READ TABLE lt_widths ASSIGNING FIELD-SYMBOL(<lv_width>) WITH KEY fieldname = <ls_fcat>-fieldname..
+
+      READ TABLE lt_widths ASSIGNING <lv_width> WITH TABLE KEY
+      primary_key COMPONENTS fieldname = <ls_fcat>-fieldname.
+
       IF sy-subrc = 0.
         WRITE :|{ <ls_fcat>-coltext WIDTH = <lv_width>-length }| , '|'.
       ENDIF.
@@ -179,7 +183,9 @@ CLASS lcl_fcat_write IMPLEMENTATION.
 
       LOOP AT mt_fcat ASSIGNING <ls_fcat>.
 
-        READ TABLE lt_widths ASSIGNING <lv_width> WITH KEY fieldname = <ls_fcat>-fieldname.
+        READ TABLE lt_widths ASSIGNING <lv_width> WITH TABLE KEY primary_key
+        COMPONENTS fieldname = <ls_fcat>-fieldname.
+
         IF sy-subrc = 0.
 
           ASSIGN COMPONENT <ls_fcat>-fieldname OF STRUCTURE <ls_result> TO <fs_value>.
@@ -188,11 +194,11 @@ CLASS lcl_fcat_write IMPLEMENTATION.
             DATA(lv_convexit) = get_conversion_exit( iv_fieldname = <ls_fcat>-fieldname
                                                     iv_tabname   = <ls_fcat>-ref_table ).
 
-            DATA(lv_conv_value) = CONV string( <fs_value> ).
+            IF lv_convexit IS NOT INITIAL AND <fs_value> IS NOT INITIAL.
 
-            DATA(lv_func_name) = |CONVERSION_EXIT_{ lv_convexit }_OUTPUT|.
+              DATA(lv_conv_value) = CONV string( <fs_value> ).
+              DATA(lv_func_name) = |CONVERSION_EXIT_{ lv_convexit }_OUTPUT|.
 
-            IF lv_convexit IS NOT INITIAL AND lv_conv_value IS NOT INITIAL.
               CALL FUNCTION lv_func_name
                 EXPORTING
                   input  = lv_conv_value
@@ -205,8 +211,8 @@ CLASS lcl_fcat_write IMPLEMENTATION.
 
               ASSIGN COMPONENT <ls_fcat>-cfieldname OF STRUCTURE <ls_result> TO <fs_currency>.
 
-              IF sy-subrc = 0 AND <fs_currency> IS ASSIGNED.
-                WRITE : <fs_value>   TO lv_formatted_text NO-GROUPING CURRENCY <fs_currency>  .
+              IF sy-subrc = 0 .
+                WRITE : <fs_value>   TO lv_formatted_text CURRENCY <fs_currency>  .
                 WRITE :|{ lv_formatted_text WIDTH = <lv_width>-length }| , '|'.
                 CONTINUE.
               ENDIF.
