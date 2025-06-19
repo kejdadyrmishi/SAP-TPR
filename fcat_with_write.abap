@@ -155,7 +155,7 @@ CLASS lcl_fcat_write IMPLEMENTATION.
                              WITH TABLE KEY fieldname = <ls_fcat>-fieldname.
         IF sy-subrc <> 0.
           INSERT VALUE #( fieldname = <ls_fcat>-fieldname
-               length    = lv_maxlen ) INTO TABLE lt_widths.
+                          length = lv_maxlen ) INTO TABLE lt_widths.
         ELSE.
           CONTINUE.
         ENDIF.
@@ -204,6 +204,7 @@ CLASS lcl_fcat_write IMPLEMENTATION.
                   input  = lv_conv_value
                 IMPORTING
                   output = lv_conv_value.
+
               <fs_value> = lv_conv_value.
             ENDIF.
 
