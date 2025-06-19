@@ -32,6 +32,10 @@ CLASS lcl_fcat_write DEFINITION FINAL.
     METHODS:       extract_data,
       display_output,
       get_fcat.
+    METHODS get_conversion_exit
+      IMPORTING iv_fieldname   TYPE fieldname
+                iv_tabname     TYPE tabname
+      RETURNING VALUE(rv_exit) TYPE string.
 
 ENDCLASS.                    "
 
@@ -49,6 +53,32 @@ CLASS lcl_fcat_write IMPLEMENTATION.
     display_output( ).
 
   ENDMETHOD.                    "execute
+
+  METHOD get_conversion_exit.
+
+    DATA lt_con_exit TYPE STANDARD TABLE OF dfies.
+
+    CALL FUNCTION 'DDIF_FIELDINFO_GET'
+      EXPORTING
+        tabname        = iv_tabname
+        fieldname      = iv_fieldname
+        langu          = sy-langu
+      TABLES
+        dfies_tab      = lt_con_exit
+      EXCEPTIONS
+        not_found      = 1
+        internal_error = 2
+        OTHERS         = 3.
+
+    IF sy-subrc = 0.
+      READ TABLE lt_con_exit ASSIGNING FIELD-SYMBOL(<ls_dfies>) INDEX 1.
+      IF sy-subrc = 0 AND <ls_dfies>-convexit IS NOT INITIAL.
+        rv_exit = <ls_dfies>-convexit.
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
 
   METHOD extract_data.
 
@@ -89,16 +119,18 @@ CLASS lcl_fcat_write IMPLEMENTATION.
             length    TYPE i,
           END OF ty_tab_length.
 
-    FIELD-SYMBOLS: <fs_value>  TYPE any,
-                   <ls_result> TYPE any,
-                   <ls_fcat>   TYPE lvc_s_fcat.
+    FIELD-SYMBOLS: <fs_value>    TYPE any,
+                   <ls_result>   TYPE any,
+                   <fs_currency> TYPE any,
+                   <ls_fcat>     TYPE lvc_s_fcat.
 
     DATA: lv_len   TYPE i,
           lv_lines TYPE i,
           lv_index TYPE i.
 
-    DATA: lv_maxlen TYPE i,
-          lt_widths TYPE STANDARD TABLE OF ty_tab_length.
+    DATA: lv_maxlen         TYPE i,
+          lt_widths         TYPE STANDARD TABLE OF ty_tab_length,
+          lv_formatted_text TYPE c LENGTH 10.
 
     IF mt_result IS INITIAL.
       WRITE: / 'No data to display.'.
@@ -144,14 +176,45 @@ CLASS lcl_fcat_write IMPLEMENTATION.
 
     LOOP AT mt_result ASSIGNING <ls_result>.
       WRITE: / '|'.
+
       LOOP AT mt_fcat ASSIGNING <ls_fcat>.
+
         READ TABLE lt_widths ASSIGNING <lv_width> WITH KEY fieldname = <ls_fcat>-fieldname.
         IF sy-subrc = 0.
+
           ASSIGN COMPONENT <ls_fcat>-fieldname OF STRUCTURE <ls_result> TO <fs_value>.
           IF sy-subrc = 0.
-            <fs_value> = |{ <fs_value> ALPHA = OUT }|.
-            WRITE :|{ <fs_value> WIDTH = <lv_width>-length }| , '|'.
+
+            DATA(lv_convexit) = get_conversion_exit( iv_fieldname = <ls_fcat>-fieldname
+                                                    iv_tabname   = <ls_fcat>-ref_table ).
+
+            DATA(lv_conv_value) = CONV string( <fs_value> ).
+
+            DATA(lv_func_name) = |CONVERSION_EXIT_{ lv_convexit }_OUTPUT|.
+
+            IF lv_convexit IS NOT INITIAL AND lv_conv_value IS NOT INITIAL.
+              CALL FUNCTION lv_func_name
+                EXPORTING
+                  input  = lv_conv_value
+                IMPORTING
+                  output = lv_conv_value.
+              <fs_value> = lv_conv_value.
+            ENDIF.
+
+            IF <ls_fcat>-cfieldname IS NOT INITIAL.
+
+              ASSIGN COMPONENT <ls_fcat>-cfieldname OF STRUCTURE <ls_result> TO <fs_currency>.
+
+              IF sy-subrc = 0 AND <fs_currency> IS ASSIGNED.
+                WRITE : <fs_value>   TO lv_formatted_text NO-GROUPING CURRENCY <fs_currency>  .
+                WRITE :|{ lv_formatted_text WIDTH = <lv_width>-length }| , '|'.
+                CONTINUE.
+              ENDIF.
+            ENDIF.
+
           ENDIF.
+
+          WRITE :|{ <fs_value> WIDTH = <lv_width>-length }| , '|'.
         ENDIF.
       ENDLOOP.
       WRITE: / sy-uline(lv_total_length).
