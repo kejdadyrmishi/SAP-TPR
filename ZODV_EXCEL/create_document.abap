@@ -1,4 +1,5 @@
 METHOD create_document.
+
   DATA:
     xblank_document  TYPE xstring,
     xsheet           TYPE xstring,
