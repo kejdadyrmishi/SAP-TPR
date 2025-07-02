@@ -30,7 +30,7 @@ SELECTION-SCREEN END OF BLOCK b2.
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
 
 PARAMETERS : p_fdir TYPE eps2filnam DEFAULT '\\DSTEST.aquafil.com\InBiz_LINKSFG_D02\Esiti' MODIF ID bl1.
-SELECT-OPTIONS: s_mask FOR epsf-epsfilnam DEFAULT '*.txt' MODIF ID bl1.
+SELECT-OPTIONS: s_mask FOR epsf-epsfilnam  MODIF ID bl1.
 
 SELECTION-SCREEN END OF BLOCK b3.
 
@@ -92,7 +92,7 @@ CLASS lcl_bank_payment IMPLEMENTATION.
 
       WHEN r_txt.
 
-        IF p_fdir IS INITIAL OR s_mask IS INITIAL.
+        IF p_fdir IS INITIAL .
           MESSAGE 'Please fill obligatory fields!'(004) TYPE 'S' DISPLAY LIKE 'E'.
           RETURN.
         ENDIF.
@@ -158,21 +158,19 @@ CLASS lcl_bank_payment IMPLEMENTATION.
     set_first_display( ).
 
   ENDMETHOD.                    "extract_data
+
   METHOD read_txt_file.
 
-    DATA : lv_dir       TYPE eps2filnam,
-           lt_files     TYPE TABLE OF eps2fili,
-           lv_line      TYPE string,
-           lt_filetable TYPE TABLE OF string.
+    DATA : lv_dir            TYPE eps2filnam,
+           lt_files          TYPE TABLE OF eps2fili,
+           lv_line           TYPE string,
+           lt_filetable      TYPE TABLE OF string,
+           lv_file_processed TYPE abap_bool VALUE abap_false,
+           lt_messages       TYPE esp1_message_tab_type.
 
     CALL FUNCTION 'EPS2_GET_DIRECTORY_LISTING'
       EXPORTING
         iv_dir_name            = p_fdir
-*       file_mask              =
-*      IMPORTING
-*       dir_name               =
-*       FILE_COUNTER           =
-*       ERROR_COUNTER          =
       TABLES
         dir_list               = lt_files
       EXCEPTIONS
@@ -184,13 +182,20 @@ CLASS lcl_bank_payment IMPLEMENTATION.
         too_many_read_errors   = 6
         empty_directory_list   = 7
         OTHERS                 = 8.
+
     IF sy-subrc <> 0.
-* Implement suitable error handling here
+      MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
 
     LOOP AT lt_files ASSIGNING FIELD-SYMBOL(<ls_files>) WHERE name IN s_mask.
 
       DATA(lv_filename) = p_fdir && '\' && <ls_files>-name.
+
+      " Clear filetable for each new file
+      IF lv_file_processed = abap_true.
+        CLEAR lt_filetable.
+      ENDIF.
 
       OPEN DATASET lv_filename FOR INPUT IN TEXT MODE ENCODING DEFAULT.
       IF sy-subrc = 0.
@@ -202,19 +207,83 @@ CLASS lcl_bank_payment IMPLEMENTATION.
 
           APPEND lv_line TO lt_filetable.
         ENDDO.
+
+        CLOSE DATASET lv_filename.
+      ELSE.
+
+        APPEND VALUE #(
+                      msgty     = 'E'
+                      msgid     = 'DB'
+                      msgno     = '000'
+                      msgv1     = |Failed to open file { <ls_files>-name }|
+              ) TO lt_messages.
+
       ENDIF.
-      CLOSE DATASET lv_filename.
 
-      READ TABLE lt_filetable ASSIGNING FIELD-SYMBOL(<ls_line>) INDEX 8.
+      " Process only if we have data in filetable
+      IF lt_filetable IS NOT INITIAL.
 
-      IF sy-subrc = 0.
-        DATA(lv_status) = <ls_line>+13(1).
-        DATA(lv_description) = <ls_line>+17.
+        IF lv_file_processed = abap_false.
+          lv_file_processed = abap_true.
+        ENDIF.
+
+        READ TABLE lt_filetable ASSIGNING FIELD-SYMBOL(<ls_key_line>) INDEX 7.
+        IF sy-subrc = 0.
+          DATA(lv_key) = <ls_key_line>+7.
+        ELSE.
+          APPEND VALUE #(
+                         msgty     = 'E'
+                         msgid     = 'DB'
+                         msgno     = '000'
+                         msgv1     = |File { <ls_files>-name } missing key line|
+                         ) TO lt_messages.
+        ENDIF.
+
+        READ TABLE lt_filetable ASSIGNING FIELD-SYMBOL(<ls_line>) INDEX 10.
+        IF sy-subrc = 0.
+          DATA(lv_status) = <ls_line>+13(1).
+          DATA(lv_description) = <ls_line>+17.
+        ENDIF.
+
+        DATA(lv_formatted_key) = CONV belnr_d( lv_key ).
+
+        SELECT SINGLE *
+          FROM zpaym_file
+          INTO @DATA(ls_paym_line)
+          WHERE belnr = @lv_formatted_key.
+
+        IF sy-subrc = 0.
+          ls_paym_line-stato_inbiz = lv_status.
+          ls_paym_line-msg_inbiz = lv_description.
+          UPDATE zpaym_file FROM ls_paym_line.
+
+          APPEND VALUE #(
+                        msgty     = 'S'
+                        msgid     = 'DB'
+                        msgno     = '000'
+                        msgv1     = |Updated record { lv_formatted_key } from file { <ls_files>-name }|
+                        ) TO lt_messages.
+
+        ELSE.
+
+          APPEND VALUE #(
+                        msgty     = 'E'
+                        msgid     = 'DB'
+                        msgno     = '000'
+                        msgv1     = |Failed to update record { lv_formatted_key } from file { <ls_files>-name }|
+                        ) TO lt_messages.
+
+        ENDIF.
       ENDIF.
-
-* UPDATE THE STATUS AND DESCRIPTION OF THE SPECIFIC LINE - TABLE( ZPAYM_FILE )
-
     ENDLOOP.
+
+    LOOP AT lt_messages ASSIGNING FIELD-SYMBOL(<ls_messages>).
+      <ls_messages>-lineno =  sy-tabix.
+    ENDLOOP.
+
+    CALL FUNCTION 'C14Z_MESSAGES_SHOW_AS_POPUP'
+      TABLES
+        i_message_tab = lt_messages.
 
   ENDMETHOD.
 
