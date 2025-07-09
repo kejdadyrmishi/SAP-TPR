@@ -19,6 +19,7 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
 SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
+  PARAMETERS: p_gf_ind AS CHECKBOX USER-COMMAND gf_toggle.
   PARAMETERS :p_blart TYPE blart DEFAULT 'GF'.
 SELECTION-SCREEN END OF BLOCK b3.
 
@@ -118,7 +119,7 @@ CLASS lcl_zfi_sofia DEFINITION FINAL.
           mo_cust_cont TYPE REF TO cl_gui_custom_container,
           mo_salv_msg  TYPE REF TO cl_salv_table,
           mo_dock_msg  TYPE REF TO cl_gui_docking_container,
-          lv_error     TYPE abap_bool.
+          mv_error     TYPE abap_bool.
 
     METHODS csv_to_table.
     METHODS display_alv.
@@ -175,9 +176,9 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
         ENDIF.
 
         check_filename( ).
-        IF lv_error = abap_true.
+        IF mv_error = abap_true.
           MESSAGE 'The filename does not match the required pattern: SOFIA_ANNO_MESE.CSV'(008) TYPE 'S' DISPLAY LIKE 'E'.
-          CLEAR: lv_error.
+          CLEAR: mv_error.
           RETURN.
         ENDIF.
 
@@ -186,7 +187,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
         CASE abap_true.
           WHEN p_direct.
 
-            IF lv_error EQ abap_true.
+            IF mv_error EQ abap_true.
               display_msg( iv_no_dock = abap_true ).
               RETURN.
             ENDIF.
@@ -209,12 +210,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
           WHEN p_disply.
 
-*            IF lv_error = abap_true.
-*              display_msg( iv_no_dock = abap_true ).
-*              RETURN.
-*            ENDIF.
             display_alv( ).
-
         ENDCASE.
 
     ENDCASE.
@@ -243,7 +239,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
     IF ( lv_fname(6) <> 'SOFIA_' ) OR
        ( lv_fname+6(4)  NOT BETWEEN '0000' AND '9999' ) OR
        ( lv_fname+11(2) NOT BETWEEN '01'   AND '12'  ).
-      lv_error = abap_true.
+      mv_error = abap_true.
     ENDIF.
 
   ENDMETHOD.
@@ -300,7 +296,8 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
           ls_split    TYPE ty_split,
           lv_prog_nr  TYPE string,
           lv_skip_itm TYPE i VALUE 0,
-          lv_hkont    TYPE c LENGTH 10.
+          lv_hkont    TYPE c LENGTH 10,
+          lv_spaces   TYPE string VALUE '    '.
 
     cl_gui_frontend_services=>gui_upload(
       EXPORTING
@@ -335,29 +332,35 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
               WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
 
-
     lv_skip_itm = 8.
 
     LOOP AT lt_strings ASSIGNING FIELD-SYMBOL(<ls_strings>) FROM 4.
       DATA(lv_excel_line) = sy-tabix.
 
-      IF <ls_strings> NP ';*'.
-        IF <ls_strings>+1 NP ';*' .
-          IF lv_skip_itm = 0.
-            lv_skip_itm = 8.
-          ENDIF.
-          lv_skip_itm -= 1.
-          CONTINUE.
-        ENDIF.
+      SPLIT <ls_strings> AT ';' INTO DATA(lv_header) DATA(lv_dummy).
+      REPLACE cl_abap_char_utilities=>cr_lf(1) INTO lv_header WITH space.
+      CONDENSE lv_header NO-GAPS.
+
+      IF <ls_strings> IS INITIAL .
+*        lv_skip_itm -= 1.
+        CONTINUE.
       ENDIF.
+
+      IF lv_header IS NOT INITIAL.
+        lv_prog_nr  = lv_header.
+
+        lv_skip_itm = 8.
+      ENDIF.
+
+      CLEAR: lv_header, lv_dummy.
 
       CASE lv_skip_itm.
 
         WHEN 5.
-          lv_prog_nr += 1.
+*          lv_prog_nr += 1.
 
           SPLIT <ls_strings> AT ';' INTO
-                         DATA(lv_dummyy)
+                         lv_dummy
                          ls_split-bukrs
                          ls_split-blart
                          ls_split-bldat
@@ -377,12 +380,8 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
         WHEN 0.
 
-*          IF <ls_strings> CO ';' .
-*            CONTINUE.
-*          ENDIF.
-
           SPLIT <ls_strings> AT ';' INTO
-                                 DATA(lv_dummy)
+                                 lv_dummy
                                  ls_split-bukrs_itm
                                  ls_split-hkont
                                  ls_split-sgtxt
@@ -421,6 +420,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
           CONDENSE ls_split-hkont NO-GAPS.
           lv_hkont = to_upper( ls_split-hkont ).
+          lv_hkont = |{ lv_hkont ALPHA = IN }|.
 
           READ TABLE lt_glacc ASSIGNING FIELD-SYMBOL(<ls_glacc>) WITH KEY z_esolver_acc = lv_hkont BINARY SEARCH.
           IF sy-subrc <> 0.
@@ -447,8 +447,13 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
               message    = |Errore durante la trascodifica del conto { lv_hkont }|
                ) TO mt_messages.
 
-            lv_error = abap_true.
+            mv_error = abap_true.
           ENDIF.
+
+          DATA lv_wrsol TYPE wrhab.
+          DATA lv_wrhab TYPE wrhab.
+          lv_wrsol = ls_split-wrsol .
+          lv_wrhab = ls_split-wrhab .
 
           APPEND VALUE #( prog_nr     = lv_prog_nr
                           bukrs       = ls_split-bukrs
@@ -468,8 +473,8 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                           bukrs_itm   = ls_split-bukrs_itm
                           hkont       = <ls_glacc>-z_cont_operativo
                           sgtxt       = ls_split-sgtxt
-                          wrsol       = COND #( WHEN ls_split-wrsol <> 0 THEN ls_split-wrsol ELSE ls_split-wrhab * -1 )
-                          wrhab       = COND #( WHEN ls_split-wrsol <> 0 THEN ls_split-wrsol ELSE ls_split-wrhab * -1 )
+                          wrsol       = COND wrhab( WHEN lv_wrsol <> 0 THEN lv_wrsol ELSE lv_wrsol * -1 )
+                          wrhab       = COND wrhab( WHEN lv_wrhab <> 0 THEN lv_wrhab ELSE lv_wrhab * -1 )
                           dmbtr       = ls_split-dmbtr
                           dmbe2       = ls_split-dmbe2
                           mwskz       = ls_split-mwskz
@@ -499,7 +504,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
     ENDLOOP.
 
-    IF mt_alv_data IS INITIAL OR lv_error IS NOT INITIAL.
+    IF mt_alv_data IS INITIAL ." OR mv_error IS NOT INITIAL.
       RETURN.
     ENDIF.
 
@@ -543,10 +548,11 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
       FOR ALL ENTRIES IN @mt_alv_data
       WHERE skb1~saknr  = @mt_alv_data-hkont
-      AND skb1~bukrs    = @mt_alv_data-bukrs
+        AND skb1~bukrs  = @mt_alv_data-bukrs
       INTO TABLE @DATA(lt_acc_and_dsc).
 
     SORT lt_acc_and_dsc BY bukrs saknr .
+
 
     LOOP AT mt_alv_data ASSIGNING FIELD-SYMBOL(<ls_alv_data>) .
 
@@ -563,12 +569,13 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
       READ TABLE lt_acc_and_dsc INTO DATA(ls_acc_and_dsc)
       WITH KEY bukrs = <ls_alv_data>-bukrs
-      saknr = <ls_alv_data>-hkont BINARY SEARCH.
+               saknr = <ls_alv_data>-hkont BINARY SEARCH.
 
       IF sy-subrc = 0.
         <ls_alv_data>-altkt = ls_acc_and_dsc-altkt.
         <ls_alv_data>-desc = ls_acc_and_dsc-txt50.
       ENDIF.
+
     ENDLOOP.
 
   ENDMETHOD.
@@ -682,6 +689,11 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
             FOR mo_salv->get_event( ).
 
     mo_salv->display( ).
+
+    IF mv_error = abap_true.
+      display_msg( iv_no_dock = abap_false ).
+    ENDIF.
+
     CALL SCREEN 0001.
 
   ENDMETHOD.
@@ -730,7 +742,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
            END OF ty_belnr.
 
     DATA: lt_selected  TYPE salv_t_row,
-          lv_error     TYPE abap_bool,
+          mv_error     TYPE abap_bool,
           lv_obj_key   TYPE bapiache09-obj_key,
           lt_post_bapi TYPE STANDARD TABLE OF ty_post_bapi,
           lt_belnr     TYPE STANDARD TABLE OF ty_belnr,
@@ -792,15 +804,40 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                                   ref_key_1       = <ls_alv_data>-xref1
                                   ) TO <ls_post_bapi_main>-items.
 
+
+        "==================================================
+
+        IF <ls_alv_data>-waers <> 'EUR'.
+
+          APPEND VALUE bapiaccr09(
+                           itemno_acc    = lv_buzei
+                           curr_type     = '10'
+                           currency      = 'EUR'
+                           amt_doccur = COND #( WHEN <ls_alv_data>-wrsol IS INITIAL AND <ls_alv_data>-wrhab IS INITIAL
+                                                THEN <ls_alv_data>-dmbtr
+                                                WHEN <ls_alv_data>-wrsol IS NOT INITIAL AND <ls_alv_data>-wrhab IS INITIAL
+                                                THEN <ls_alv_data>-dmbtr
+                                                ELSE <ls_alv_data>-dmbtr * -1 )
+                            ) TO <ls_post_bapi_main>-currc .
+
+        ENDIF.
+
+        "==================================================
+
         APPEND VALUE bapiaccr09(
-                         itemno_acc = lv_buzei
-                         curr_type  = '00'
-                         currency   = <ls_alv_data>-waers
-                         amt_doccur = <ls_alv_data>-wrsol
-                         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
+                         itemno_acc    = lv_buzei
+                         curr_type     = '00'
+                         currency      = <ls_alv_data>-waers
+                         amt_doccur = COND #( WHEN <ls_alv_data>-wrsol IS NOT INITIAL THEN <ls_alv_data>-wrsol ELSE <ls_alv_data>-wrhab * -1 )
                           ) TO <ls_post_bapi_main>-currc ASSIGNING FIELD-SYMBOL(<ls_bapi_accr>).
 
-        IF <ls_alv_data>-hkont_gtran IS INITIAL .
+*        IF <ls_bapi_accr>-amt_doccur IS INITIAL .
+*          <ls_bapi_accr>-exch_rate = 1.
+*        ELSE.
+*          <ls_bapi_accr>-exch_rate = abs( <ls_alv_data>-dmbtr / <ls_bapi_accr>-amt_doccur ).
+*        ENDIF.
+
+        IF <ls_alv_data>-hkont_gtran IS INITIAL OR p_gf_ind IS INITIAL.
           CONTINUE.
         ENDIF.
 
@@ -864,26 +901,27 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                       ) ) .
 
         <ls_post>-currc = VALUE #(
-        (
-         itemno_acc = 1
-         curr_type  = '00'
-         currency   = <ls_alv_data>-waers
-         amt_doccur = <ls_bapi_accr>-amt_doccur * -1
-         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
+         (
+           itemno_acc = 1
+           curr_type  = '00'
+           currency   = <ls_alv_data>-waers
+           amt_doccur = <ls_bapi_accr>-amt_doccur * -1
+           exch_rate  = <ls_bapi_accr>-exch_rate
          )
          ( itemno_acc = 2
-         curr_type  = '00'
-         currency   = <ls_alv_data>-waers
-         amt_doccur = <ls_bapi_accr>-amt_doccur
-         exch_rate  = abs( COND #( WHEN <ls_alv_data>-dmbtr IS INITIAL THEN 1 ELSE <ls_alv_data>-wrhab / <ls_alv_data>-dmbtr ) )
-) ).
+           curr_type  = '00'
+           currency   = <ls_alv_data>-waers
+           amt_doccur = <ls_bapi_accr>-amt_doccur
+           exch_rate  = <ls_bapi_accr>-exch_rate
+         ) ).
 
       ENDLOOP.
 
       DATA(lv_no_commit) = abap_false.
+
       LOOP AT lt_post_bapi ASSIGNING <ls_post>.
 
-        CLEAR: lv_error,
+        CLEAR: mv_error,
                lv_obj_key.
 
         call_bapi(
@@ -900,7 +938,7 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
             iv_xref2 = <ls_post>-items[ 1 ]-ref_key_2
             iv_sgtxt = <ls_post>-items[ 1 ]-item_text
           IMPORTING
-            ev_err     = lv_error
+            ev_err     = mv_error
             ev_obj_key = lv_obj_key
         ).
 
@@ -911,14 +949,14 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
           DATA(lv_main_belnr) = lv_obj_key(10).
         ENDIF.
 
-        IF lv_error = abap_true.
+        IF mv_error = abap_true.
           iv_no_commit = abap_true.
         ENDIF.
 
       ENDLOOP.
 
       LOOP AT GROUP <lg_prog_nr> ASSIGNING <ls_alv_data>.
-        IF lv_error IS NOT INITIAL.
+        IF mv_error IS NOT INITIAL.
           <ls_alv_data>-status = icon_red_light.
           CONTINUE.
         ELSE.
@@ -932,9 +970,9 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
         <ls_alv_data>-belnr  = lv_main_belnr.
 
 
-*        IF <ls_alv_data>-hkont_gtran IS INITIAL .
-*          CONTINUE.
-*        ENDIF.
+        IF <ls_alv_data>-hkont_gtran IS INITIAL OR p_gf_ind IS INITIAL.
+          CONTINUE.
+        ENDIF.
 
         READ TABLE lt_belnr ASSIGNING FIELD-SYMBOL(<ls_belnr>) WITH KEY buzei = <ls_alv_data>-prog_nr.
         IF sy-subrc = 0.
