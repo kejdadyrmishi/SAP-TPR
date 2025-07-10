@@ -484,8 +484,8 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
                           aufnr       = ls_split-aufnr
                           ps_posid    = ls_split-ps_posid
                           valut       = ls_split-valut
-                          hbkid       = ls_split-hbkid
-                          hktid       = ls_split-hktid
+                          hbkid       = COND #( WHEN <ls_glacc>-z_cont_operativo <> 'A99999998' THEN ls_split-hbkid )
+                          hktid       = COND #( WHEN <ls_glacc>-z_cont_operativo <> 'A99999998' THEN ls_split-hktid )
                           zuonr       = ls_split-zuonr
                           vbund       = ls_split-vbund
                           segment     = ls_split-segment
@@ -809,16 +809,26 @@ CLASS lcl_zfi_sofia IMPLEMENTATION.
 
         IF <ls_alv_data>-waers <> 'EUR'.
 
+          IF <ls_alv_data>-wrsol IS INITIAL AND <ls_alv_data>-wrhab IS INITIAL.
+            DATA(lv_dmbtr) = REDUCE dmbtr( INIT lv_dmb = EXACT dmbtr( 0 )
+                                           FOR <ls_c> IN <ls_post_bapi_main>-currc
+                                           NEXT lv_dmb = <ls_c>-amt_doccur + lv_dmb
+                                           ).
+            lv_dmbtr = lv_dmbtr * -1.
+          ELSEIF <ls_alv_data>-wrhab IS NOT INITIAL.
+            lv_dmbtr = <ls_alv_data>-dmbtr * -1.
+          ELSE.
+            lv_dmbtr = <ls_alv_data>-dmbtr.
+          ENDIF.
+
           APPEND VALUE bapiaccr09(
                            itemno_acc    = lv_buzei
                            curr_type     = '10'
                            currency      = 'EUR'
-                           amt_doccur = COND #( WHEN <ls_alv_data>-wrsol IS INITIAL AND <ls_alv_data>-wrhab IS INITIAL
-                                                THEN <ls_alv_data>-dmbtr
-                                                WHEN <ls_alv_data>-wrsol IS NOT INITIAL AND <ls_alv_data>-wrhab IS INITIAL
-                                                THEN <ls_alv_data>-dmbtr
-                                                ELSE <ls_alv_data>-dmbtr * -1 )
+                           amt_doccur = lv_dmbtr
                             ) TO <ls_post_bapi_main>-currc .
+
+          CLEAR lv_dmbtr.
 
         ENDIF.
 
