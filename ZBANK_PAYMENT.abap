@@ -16,7 +16,7 @@ SELECTION-SCREEN END OF BLOCK b1.
 
 *ALV display
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
-SELECT-OPTIONS : s_bukrs FOR zpaym_file-bukrs MODIF ID bl2,
+SELECT-OPTIONS : s_bukrs FOR zpaym_file-zzcomp_code MODIF ID bl2 MATCHCODE OBJECT zsia_bukrs_shlp,
                  s_budat FOR zpaym_file-budat MODIF ID bl2,
 *                 s_xblnr FOR zpaym_file-xblnr MODIF ID bl2,
                  s_usnam FOR zpaym_file-usnam MODIF ID bl2.
@@ -48,7 +48,7 @@ CLASS lcl_bank_payment DEFINITION FINAL.
   PRIVATE SECTION.
 
     TYPES : BEGIN OF ty_alv_display,
-              bukrs       TYPE bukrs,
+              zzcomp_code TYPE zcomp_code,
               budat       TYPE budat,
 *              xblnr       TYPE xblnr1,
               usnam       TYPE usnam,
@@ -116,7 +116,7 @@ CLASS lcl_bank_payment IMPLEMENTATION.
       DATA(lv_esito) = 'zpaym_msg~esito = @p_stat'.
     ENDIF.
 
-    SELECT  zpaym_file~bukrs,
+    SELECT  zpaym_file~zzcomp_code,
             zpaym_file~budat,
 *            zpaym_file~xblnr,
             zpaym_file~usnam,
@@ -130,7 +130,7 @@ CLASS lcl_bank_payment IMPLEMENTATION.
        JOIN zpaym_msg
        ON zpaym_file~stato_inbiz = zpaym_msg~stato_inbiz
        INTO CORRESPONDING FIELDS OF TABLE @mt_alv_display
-       WHERE zpaym_file~bukrs IN @s_bukrs
+       WHERE zpaym_file~zzcomp_code IN @s_bukrs
        AND zpaym_file~budat IN @s_budat
 *       AND zpaym_file~xblnr IN @s_xblnr
        AND zpaym_file~usnam IN @s_usnam
@@ -227,7 +227,46 @@ CLASS lcl_bank_payment IMPLEMENTATION.
           lv_file_processed = abap_true.
         ENDIF.
 
-        READ TABLE lt_filetable ASSIGNING FIELD-SYMBOL(<ls_key_line>) INDEX 7.
+        READ TABLE lt_filetable ASSIGNING FIELD-SYMBOL(<ls_key_line>) INDEX 3.
+        IF sy-subrc = 0.
+          DATA(lv_year) = <ls_key_line>+23(4).
+        ELSE.
+          APPEND VALUE #(
+                         msgty     = 'E'
+                         msgid     = 'DB'
+                         msgno     = '000'
+                         msgv1     = |File { <ls_files>-name } missing key line Year!|
+                         ) TO lt_messages.
+        ENDIF.
+
+        READ TABLE lt_filetable ASSIGNING <ls_key_line> INDEX 5.
+        IF sy-subrc = 0.
+          DATA(lv_txt_bukrs) = <ls_key_line>+33(5).
+
+          SELECT SINGLE zzcomp_code
+            FROM zsia_companycode
+            INTO @DATA(lv_bukrs)
+            WHERE zzsia_code = @lv_txt_bukrs.
+
+          IF sy-subrc <> 0.
+            APPEND VALUE #(
+                           msgty     = 'E'
+                           msgid     = 'DB'
+                           msgno     = '000'
+                           msgv1     = |SIA Code { lv_txt_bukrs } does not belong to any Company Code!|
+                           ) TO lt_messages.
+          ENDIF.
+
+        ELSE.
+          APPEND VALUE #(
+                         msgty     = 'E'
+                         msgid     = 'DB'
+                         msgno     = '000'
+                         msgv1     = |File { <ls_files>-name } missing key line Company Code!|
+                         ) TO lt_messages.
+        ENDIF.
+
+        READ TABLE lt_filetable ASSIGNING <ls_key_line> INDEX 7.
         IF sy-subrc = 0.
           DATA(lv_key) = <ls_key_line>+7.
         ELSE.
@@ -235,7 +274,7 @@ CLASS lcl_bank_payment IMPLEMENTATION.
                          msgty     = 'E'
                          msgid     = 'DB'
                          msgno     = '000'
-                         msgv1     = |File { <ls_files>-name } missing key line|
+                         msgv1     = |File { <ls_files>-name } missing key line Message ID!|
                          ) TO lt_messages.
         ENDIF.
 
@@ -250,7 +289,9 @@ CLASS lcl_bank_payment IMPLEMENTATION.
         SELECT SINGLE *
           FROM zpaym_file
           INTO @DATA(ls_paym_line)
-          WHERE belnr = @lv_formatted_key.
+          WHERE belnr = @lv_formatted_key
+          AND belnr_gjahr = @lv_year
+          AND zzcomp_code = @lv_bukrs.
 
         IF sy-subrc = 0.
           ls_paym_line-stato_inbiz = lv_status.
@@ -270,7 +311,8 @@ CLASS lcl_bank_payment IMPLEMENTATION.
                         msgty     = 'E'
                         msgid     = 'DB'
                         msgno     = '000'
-                        msgv1     = |Failed to update record { lv_formatted_key } from file { <ls_files>-name }|
+                        msgv1     = |Record { lv_formatted_key } from file { <ls_files>-name }|
+                        msgv2     = |does not exist!|
                         ) TO lt_messages.
 
         ENDIF.
@@ -309,7 +351,7 @@ CLASS lcl_bank_payment IMPLEMENTATION.
   METHOD get_fcat_grid.
 
     mt_gridfcat = VALUE #(
-              ( fieldname = 'BUKRS'       ref_table = 'ZPAYM_FILE' )
+              ( fieldname = 'ZZCOMP_CODE'       ref_table = 'ZPAYM_FILE' )
               ( fieldname = 'BUDAT'       ref_table = 'ZPAYM_FILE' )
 *              ( fieldname = 'XBLNR'       ref_table = 'ZPAYM_FILE' )
               ( fieldname = 'USNAM'       ref_table = 'ZPAYM_FILE' )
