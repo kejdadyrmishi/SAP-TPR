@@ -220,7 +220,7 @@ CLASS lcl_report IMPLEMENTATION.
     IF sy-subrc <> 0 AND gs_screen100-p_psc2 = abap_true.
       RETURN.
     ELSEIF gs_screen100-p_psc2 = abap_true.
-      IF NOT ms_weight-zzpeso > gs_screen100-p_zzpeso.
+      IF ms_weight-zzpeso < gs_screen100-p_zzpeso.
         MESSAGE w018(zmm_cp_msg).
       ENDIF.
     ENDIF.
@@ -335,7 +335,7 @@ CLASS lcl_report IMPLEMENTATION.
                          zzdataril       = sy-datum
                          zzoraril        = sy-uzeit
                          zzpesopietre    = COND #( WHEN gs_screen100-p_psc2 = abap_true THEN lv_pesopietre )
-                         zzpesoother     = COND #( WHEN gs_screen100-p_psc2 = abap_true THEN lv_pesoother )
+                         zzpesoother     = lv_pesoother
                          zzpesocalofasea = COND #( WHEN gs_screen100-p_psc2 = abap_true THEN lv_calo_pat_abs )
                          zzpesocalofaset = COND #( WHEN ls_peso_fasi IS NOT INITIAL THEN ls_peso_fasi-zzpeso - gs_screen100-p_zzpeso )
                          zzpeso          = gs_screen100-p_zzpeso
@@ -348,6 +348,17 @@ CLASS lcl_report IMPLEMENTATION.
 
     IF sy-subrc = 0.
       MESSAGE s002(zmm_cp_msg).
+
+      IF gs_screen100-p_psc2 = abap_true.
+
+        UPDATE zmm_cp_peso_fasi
+           SET zzpesoother = 0
+         WHERE aufnr   = gs_screen100-p_aufnr2
+           AND vornr   = gs_screen100-p_vornr2
+           AND zztipo  = 'I'
+           AND ebeln   = gs_screen100-p_ebeln2.
+
+      ENDIF.
     ELSE.
       MESSAGE s003(zmm_cp_msg) DISPLAY LIKE 'E'.
     ENDIF.
@@ -472,7 +483,7 @@ CLASS lcl_report IMPLEMENTATION.
       ENDIF.
     ENDIF.
 
-    DATA lv_test TYPE abap_BOOL.
+    DATA lv_test TYPE abap_bool.
 
     IF gs_screen100-p_psc1 = abap_true.
       DATA(lv_pesopietre)         = CONV zmm_cp_peso( lv_gsgew ).
@@ -498,23 +509,29 @@ CLASS lcl_report IMPLEMENTATION.
 
           READ TABLE ls_filler_data-matwaste ASSIGNING FIELD-SYMBOL(<ls_matwaste>) INDEX 1.
 
-          IF lv_peso_sfrido_artig > 0.
+          IF lv_peso_sfrido_artig <> 0.
+
             APPEND VALUE #( material   = <ls_matwaste>-zmatwaste
                             plant      = ls_filler_data-werks
                             stge_loc   = ls_filler_data-lgort
-                            entry_qnt  = lv_peso_sfrido_artig
-                            move_type  = '531'
+                            entry_qnt  = abs( lv_peso_sfrido_artig )
+                            move_type  = COND #( WHEN lv_peso_sfrido_artig > 0 THEN '531' ELSE '532')
                             entry_uom  = 'G'
                             no_more_gr = 'X'
                             withdrawn  = 'X'
                             orderid    = gs_screen100-p_aufnr
                             activity   = gs_screen100-p_vornr
                             ) TO lt_gm_item.
+
+            APPEND VALUE #( zmatwaste = <ls_matwaste>-zmatwaste
+                            peso      = lv_peso_sfrido_artig
+                            meins     = 'G'
+                           ) TO mt_scrap.
+
           ENDIF.
 
-          APPEND VALUE #( zmatwaste = <ls_matwaste>-zmatwaste peso = lv_peso_sfrido_artig meins = 'G' ) TO mt_scrap.
-
         ELSE.
+
 
           DATA(lv_tot_ntgew) = REDUCE ntgew( INIT lv_total = EXACT ntgew( 0 )
                                              FOR <material> IN ls_filler_data-matwaste
@@ -525,34 +542,33 @@ CLASS lcl_report IMPLEMENTATION.
             DATA(lv_ntgew_perc)  = CONV zmm_cp_peso( ( 100 * <ls_matwaste>-ntgew ) / lv_tot_ntgew ).
             DATA(lv_peso_mat)    = CONV zmm_cp_peso( ( lv_ntgew_perc * lv_peso_sfrido_artig ) / 100 ).
 
-            IF lv_peso_mat < 0.
-              DATA(lv_negative_qty) = abap_true.
-              lv_peso_mat = 0.
-            ENDIF.
+            IF lv_peso_mat <> 0.
 
-            IF lv_peso_mat > 0.
               APPEND VALUE #( material   = <ls_matwaste>-zmatwaste
                               plant      = ls_filler_data-werks
                               stge_loc   = ls_filler_data-lgort
-                              entry_qnt  = lv_peso_mat
-                              move_type  = '531'
+                              entry_qnt  = abs( lv_peso_mat )
+                              move_type  = COND #( WHEN lv_peso_mat > 0 THEN '531' ELSE '532')
                               entry_uom  = 'G'
                               no_more_gr = 'X'
                               withdrawn  = 'X'
                               orderid    = gs_screen100-p_aufnr
                               activity   = gs_screen100-p_vornr
                               ) TO lt_gm_item.
+
+              APPEND VALUE #( zmatwaste = <ls_matwaste>-zmatwaste
+                              peso      = lv_peso_mat
+                              meins     = 'G'
+                             ) TO mt_scrap.
+
             ENDIF.
-
-            APPEND VALUE #( zmatwaste = <ls_matwaste>-zmatwaste peso = lv_peso_mat meins = 'G' ) TO mt_scrap.
-
           ENDLOOP.
 
         ENDIF.
       ENDIF.
 
-      IF gs_screen100-waste IS NOT INITIAL AND lv_negative_qty IS INITIAL.
-        LOOP AT mt_waste_tab ASSIGNING <ls_waste_row> WHERE peso <> 0 .
+      IF gs_screen100-waste IS NOT INITIAL.
+        LOOP AT mt_waste_tab ASSIGNING <ls_waste_row> WHERE peso > 0 .
           APPEND VALUE #( material   = <ls_waste_row>-zmatwaste
                           plant      = gs_screen100-p_werks
                           stge_loc   = gs_screen100-p_lgort
@@ -567,7 +583,7 @@ CLASS lcl_report IMPLEMENTATION.
         ENDLOOP.
       ENDIF.
 
-      gs_screen101-zzpeso = COND #( WHEN lv_negative_qty IS INITIAL THEN lv_peso_sfrido_artig ELSE 0 ).
+      gs_screen101-zzpeso = lv_peso_sfrido_artig.
 
       IF mt_scrap IS NOT INITIAL.
         SELECT SINGLE lgobe
@@ -606,7 +622,7 @@ CLASS lcl_report IMPLEMENTATION.
         LOOP AT mt_scrap ASSIGNING <ls_scrap>.
           READ TABLE lt_gm_item ASSIGNING FIELD-SYMBOL(<ls_gm_item>) WITH KEY material = <ls_scrap>-zmatwaste.
           IF sy-subrc = 0.
-            <ls_gm_item>-entry_qnt = <ls_scrap>-peso.
+            <ls_gm_item>-entry_qnt = abs( <ls_scrap>-peso ).
           ENDIF.
         ENDLOOP.
 
@@ -775,10 +791,19 @@ CLASS lcl_report IMPLEMENTATION.
         lv_lifnr = iv_lifnr.
     ENDCASE.
 
+    SELECT SINGLE prgrp
+      FROM pgmi
+      INTO @DATA(lv_prgrp)
+      WHERE nrmit = @ev_matnr.
+
+    IF lv_prgrp IS INITIAL.
+      lv_prgrp = ev_matnr.
+    ENDIF.
+
     SELECT SINGLE zzcalo
       FROM zmm_cp_perc_amm
       INTO @es_filler_data-zzcalo
-      WHERE matnr = @ev_matnr
+      WHERE prgrp = @lv_prgrp
         AND valid_from <= @sy-datum
         AND valid_to   >= @sy-datum
         AND arbpl       = @es_operation-work_center
