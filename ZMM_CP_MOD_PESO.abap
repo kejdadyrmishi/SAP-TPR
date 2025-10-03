@@ -6,10 +6,16 @@
 REPORT zmm_cp_mod_peso.
 
 DATA: BEGIN OF gs_screen100,
-        ok_code TYPE sy-ucomm,
-        aufnr   TYPE zmm_cp_peso_fasi-aufnr,
-        vornr   TYPE zmm_cp_peso_fasi-vornr,
-        zzpeso  TYPE zmm_cp_peso_fasi-zzpeso,
+        ok_code    TYPE sy-ucomm,
+        aufnr      TYPE zmm_cp_peso_fasi-aufnr,
+        vornr      TYPE zmm_cp_peso_fasi-vornr,
+        old_aufnr  TYPE zmm_cp_peso_fasi-aufnr,
+        old_vornr  TYPE zmm_cp_peso_fasi-vornr,
+        peso_vech  TYPE zmm_cp_peso_fasi-zzpeso,
+        peso_v_mat TYPE zmm_cp_peso_fasi-zzpesoother,
+        zzpeso     TYPE zmm_cp_peso_fasi-zzpeso,
+        peso_n_mat TYPE zmm_cp_peso_fasi-zzpesoother,
+        meins      TYPE ekpo-meins VALUE 'G',
       END OF gs_screen100.
 *----------------------------------------------------------------------*
 *       CLASS lcl_report DEFINITION
@@ -18,10 +24,11 @@ DATA: BEGIN OF gs_screen100,
 *----------------------------------------------------------------------*
 CLASS lcl_report DEFINITION FINAL.
   PUBLIC SECTION.
-    METHODS execute.
+    METHODS :execute,
+      enter.
 
   PRIVATE SECTION.
-    METHODS save.
+    METHODS :save.
 ENDCLASS.                    "
 
 DATA go_report TYPE REF TO lcl_report.
@@ -38,6 +45,27 @@ CLASS lcl_report IMPLEMENTATION.
   METHOD execute.
     save( ).
   ENDMETHOD.                    "execute
+
+  METHOD enter.
+
+    IF gs_screen100-old_aufnr <> gs_screen100-aufnr OR  gs_screen100-old_vornr <> gs_screen100-vornr.
+
+      gs_screen100-old_aufnr = gs_screen100-aufnr.
+      gs_screen100-old_vornr = gs_screen100-vornr.
+
+      SELECT SINGLE zzpeso,
+             zzpesoother
+        FROM zmm_cp_peso_fasi
+        INTO ( @gs_screen100-peso_vech , @gs_screen100-peso_v_mat )
+        WHERE aufnr = @gs_screen100-aufnr
+          AND vornr = @gs_screen100-vornr.
+
+      gs_screen100-zzpeso = gs_screen100-peso_vech.
+      gs_screen100-peso_n_mat = gs_screen100-peso_v_mat.
+
+    ENDIF.
+
+  ENDMETHOD.
 
   METHOD save.
 
@@ -58,11 +86,18 @@ CLASS lcl_report IMPLEMENTATION.
     READ TABLE lt_peso ASSIGNING FIELD-SYMBOL(<ls_peso>) INDEX 1.
     IF sy-subrc = 0.
       <ls_peso>-zzpeso = gs_screen100-zzpeso.
+      IF <ls_peso>-ebeln IS INITIAL.
+        <ls_peso>-zzpesoother = gs_screen100-peso_n_mat.
+      ELSE.
+        CLEAR gs_screen100-peso_n_mat.
+        MESSAGE i027(zmm_cp_msg).
+      ENDIF.
+
       <ls_peso>-uname  = sy-uname.
       <ls_peso>-datum  = sy-datum.
       <ls_peso>-uzeit  = sy-uzeit.
 
-      MODIFY zmm_cp_peso_fasi FROM <ls_peso>.
+      UPDATE zmm_cp_peso_fasi FROM <ls_peso>.
       IF sy-subrc = 0.
         MESSAGE s002(zmm_cp_msg).
       ELSE.
