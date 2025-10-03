@@ -6,14 +6,15 @@
 REPORT zmm_cp_recupero_sfrido.
 
 DATA: BEGIN OF gs_screen100,
-        ok_code  TYPE sy-ucomm,
-        p_arbpl  TYPE zmm_cp_peso_recu-arbpl,
-        p_datada TYPE zmm_cp_peso_recu-zzdatada,
-        p_dataa  TYPE zmm_cp_peso_recu-zzdataa,
-        p_zzpeso TYPE zmm_cp_peso_recu-zzpeso,
-        p_matnr  TYPE zmm_cp_peso_recu-matnr,
-        p_werks  TYPE zmm_cp_peso_recu-werks,
-        p_lgort  TYPE zmm_cp_peso_recu-lgort,
+        ok_code   TYPE sy-ucomm,
+        p_arbpl   TYPE zmm_cp_peso_recu-arbpl,
+        p_datada  TYPE zmm_cp_peso_recu-zzdatada,
+        p_dataa   TYPE zmm_cp_peso_recu-zzdataa,
+        p_zzpeso  TYPE zmm_cp_peso_recu-zzpeso,
+        p_matnr   TYPE zmm_cp_peso_recu-matnr,
+        p_werks   TYPE zmm_cp_peso_recu-werks,
+        p_frlgort TYPE zmm_cp_peso_recu-lgort_from,
+        p_tolgort TYPE zmm_cp_peso_recu-lgort_to,
       END OF gs_screen100.
 
 *----------------------------------------------------------------------*
@@ -42,73 +43,62 @@ CLASS lcl_report IMPLEMENTATION.
 
   METHOD save.
 
-    DATA: ls_gm_header     TYPE BAPI2017_GM_head_01,
-          lv_goodsmvt_code TYPE bapi2017_gm_code VALUE '03',
-          lt_gm_item       TYPE bapi2017_gm_item_create_t,
-          lt_return        TYPE bapiret2_tab,
-          lv_mblnr         TYPE mblnr,
-          lv_mjahr         TYPE mjahr,
-          lv_error         TYPE abap_bool,
-          ls_peso_recu     TYPE zmm_cp_peso_recu.
+    DATA: lt_return    TYPE bapiret2_tab,
+          ls_peso_recu TYPE zmm_cp_peso_recu.
 
-    lt_gm_item = VALUE #( ( material   = gs_screen100-p_matnr
-                            plant      = gs_screen100-p_werks
-                            stge_loc   = gs_screen100-p_lgort
-                            entry_qnt  = gs_screen100-p_zzpeso
-                            move_type  = '531'
-                            entry_uom  = 'G'
-                            no_more_gr = 'X'
-                            withdrawn  = 'X'  ) ).
+    DATA(lt_gm_item) = VALUE bapi2017_gm_item_create_t(
+            ( material   = gs_screen100-p_matnr
+              plant      = gs_screen100-p_werks
+              stge_loc   = gs_screen100-p_frlgort
+              move_stloc = gs_screen100-p_tolgort
+              entry_qnt  = gs_screen100-p_zzpeso
+              move_type  = '311'
+              entry_uom  = 'G'
+              no_more_gr = 'X'
+              withdrawn  = 'X'  ) ).
 
-    ls_gm_header = VALUE #( pstng_date = sy-datum
-                            doc_date   = sy-datum  ).
+    DATA(ls_gm_header) = VALUE bapi2017_gm_head_01(
+                  pstng_date = sy-datum
+                  doc_date   = sy-datum  ).
+
+    DATA(ls_goodsmvt_code) = VALUE bapi2017_gm_code( gm_code = '04' ).
 
     CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
       EXPORTING
         goodsmvt_header  = ls_gm_header
-        goodsmvt_code    = lv_goodsmvt_code
+        goodsmvt_code    = ls_goodsmvt_code
       IMPORTING
-        materialdocument = lv_mblnr
-        matdocumentyear  = lv_mjahr
+        materialdocument = ls_peso_recu-mblnr
+        matdocumentyear  = ls_peso_recu-mjahr
       TABLES
         goodsmvt_item    = lt_gm_item
         return           = lt_return.
 
-    IF lt_return IS NOT INITIAL.
-
-      READ TABLE lt_return WITH KEY type = 'E' INTO DATA(ls_error).
-
-      IF sy-subrc = 0.
-        MESSAGE ls_error-message TYPE  'S' DISPLAY LIKE 'E'.
-        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-        RETURN.
-      ELSE.
-        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
-      ENDIF.
+    READ TABLE lt_return WITH KEY type = 'E' INTO DATA(ls_error).
+    IF sy-subrc = 0.
+      MESSAGE ls_error-message TYPE 'S' DISPLAY LIKE 'E'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      RETURN.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
     ENDIF.
 
-    ls_peso_recu-arbpl    = gs_screen100-p_arbpl.
-    ls_peso_recu-zzdatada = gs_screen100-p_datada.
-    ls_peso_recu-zzdataa  = gs_screen100-p_dataa.
-    ls_peso_recu-zzpeso   = gs_screen100-p_zzpeso.
-    ls_peso_recu-matnr    = gs_screen100-p_matnr.
-    ls_peso_recu-werks    = gs_screen100-p_werks.
-    ls_peso_recu-lgort    = gs_screen100-p_lgort.
-    ls_peso_recu-mjahr    = lv_mjahr.
-    ls_peso_recu-mblnr    = lv_mblnr.
-    ls_peso_recu-bname    = sy-uname.
+    ls_peso_recu-arbpl      = gs_screen100-p_arbpl.
+    ls_peso_recu-zzdatada   = gs_screen100-p_datada.
+    ls_peso_recu-zzdataa    = gs_screen100-p_dataa.
+
+    ls_peso_recu-zzpeso     = gs_screen100-p_zzpeso.
+    ls_peso_recu-matnr      = gs_screen100-p_matnr.
+    ls_peso_recu-werks      = gs_screen100-p_werks.
+    ls_peso_recu-lgort_from = gs_screen100-p_frlgort.
+    ls_peso_recu-lgort_to   = gs_screen100-p_tolgort.
+    ls_peso_recu-bname      = sy-uname.
+    GET TIME STAMP FIELD ls_peso_recu-created_on.
 
     INSERT zmm_cp_peso_recu FROM ls_peso_recu.
-
-    IF sy-subrc = 0.
-      MESSAGE 'Data saved successfully' TYPE  'S'.
-    ELSE.
-      MESSAGE 'Error while saving data' TYPE  'S' DISPLAY LIKE 'E'.
-    ENDIF.
+    DATA(lv_msg) = text-001 && ls_peso_recu-mjahr && ls_peso_recu-mblnr .
 
     CLEAR ls_peso_recu.
-
+    MESSAGE lv_msg TYPE 'S'.
   ENDMETHOD.                    "execute
-
-
 ENDCLASS.
