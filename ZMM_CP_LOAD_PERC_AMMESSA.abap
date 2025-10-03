@@ -121,8 +121,8 @@ CLASS lcl_report IMPLEMENTATION.
     DATA: lt_buttons TYPE STANDARD TABLE OF smp_dyntxt.
 
     lt_buttons = VALUE #(
-    ( icon_id =  icon_export  icon_text = 'Download Template' )
-    ( icon_id =  icon_import  icon_text = 'Upload' ) ).
+    ( icon_id =  icon_export  icon_text = 'Download Template'(002) )
+    ( icon_id =  icon_import  icon_text = 'Upload'(003) ) ).
 
     LOOP AT lt_buttons ASSIGNING FIELD-SYMBOL(<ls_buttons>).
       CASE sy-tabix.
@@ -301,7 +301,7 @@ CLASS lcl_report IMPLEMENTATION.
     FIELD-SYMBOLS: <lt_excel_upload> TYPE STANDARD TABLE.
 
     IF mv_filename IS INITIAL.
-      MESSAGE 'Enter a file first' TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE 'Enter a file first'(013) TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
@@ -333,8 +333,9 @@ CLASS lcl_report IMPLEMENTATION.
             OTHERS                  = 19
         ).
     IF sy-subrc <> 0.
-      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
-                 WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+                 WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+      RETURN.
     ENDIF.
 
     DATA(lv_bin_data) = cl_bcs_convert=>solix_to_xstring( it_solix = lt_data ).
@@ -349,7 +350,7 @@ CLASS lcl_report IMPLEMENTATION.
 
     IF lt_worksheet_names IS INITIAL.
 
-      MESSAGE 'Problem with excel file' TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE 'Problem with excel file'(004) TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
@@ -406,21 +407,19 @@ CLASS lcl_report IMPLEMENTATION.
         ENDCASE.
       ENDDO.
 
-
       <ls_excel_check>-prgrp = |{ <ls_excel_check>-prgrp ALPHA = IN }|.
       <ls_excel_check>-lifnr = |{ <ls_excel_check>-lifnr ALPHA = IN }|.
 
       IF <ls_excel_check>-prgrp IS INITIAL
       OR <ls_excel_check>-valid_from IS INITIAL
-      OR <ls_excel_check>-valid_to IS INITIAL
-      OR <ls_excel_check>-zzcalo IS INITIAL .
+      OR <ls_excel_check>-valid_to IS INITIAL.
 
         APPEND VALUE #(
               msgty     = 'E'
               msgid     = 'DB'
               msgno     = '000'
-              msgv1     = |Row no. { <ls_excel_check>-excel_row }:|
-              msgv2     = |Material, Validity start, Validity end and Percentage are mandatory |
+              msgv1     = TEXT-005 && <ls_excel_check>-excel_row
+              msgv2     = TEXT-006
       ) TO lt_messages.
 
         CONTINUE.
@@ -432,8 +431,8 @@ CLASS lcl_report IMPLEMENTATION.
               msgty     = 'E'
               msgid     = 'DB'
               msgno     = '000'
-              msgv1     = |Row no. { <ls_excel_check>-excel_row }:|
-              msgv2     = |Either Work Center or Supplier must be specified |
+              msgv1     = TEXT-005 && <ls_excel_check>-excel_row
+              msgv2     = TEXT-007
       ) TO lt_messages.
 
         CONTINUE.
@@ -442,7 +441,7 @@ CLASS lcl_report IMPLEMENTATION.
     ENDLOOP.
 
     IF lt_excel_check IS INITIAL.
-      MESSAGE 'The excel file does not have any data' TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE 'The excel file does not have any data'(008) TYPE 'S' DISPLAY LIKE 'E'.
       RETURN.
     ENDIF.
 
@@ -509,8 +508,8 @@ CLASS lcl_report IMPLEMENTATION.
                       msgty     = 'E'
                       msgid     = 'DB'
                       msgno     = '000'
-                      msgv1     = |Row no. { lv_exc_row }:|
-                      msgv2     = |Duplicate found in Excel file for same key|
+                      msgv1     = TEXT-005 && lv_exc_row
+                      msgv2     = TEXT-009
                       ) TO lt_messages.
         CONTINUE.
       ENDIF.
@@ -521,8 +520,8 @@ CLASS lcl_report IMPLEMENTATION.
             msgty     = 'E'
             msgid     = 'DB'
             msgno     = '000'
-            msgv1     = |Row no. { lv_exc_row }:|
-            msgv2     = |Date overlap found in Excel file for same key|
+            msgv1     = TEXT-005 && lv_exc_row
+            msgv2     = TEXT-010
             ) TO lt_messages.
 
         CONTINUE.
@@ -542,9 +541,9 @@ CLASS lcl_report IMPLEMENTATION.
     APPEND LINES OF CORRESPONDING tt_perc_amm( lt_excel_check ) TO lt_perc_amm.
     MODIFY zmm_cp_perc_amm FROM TABLE lt_perc_amm.
     IF sy-subrc = 0.
-      MESSAGE 'Data saved successfully' TYPE 'S'.
+      MESSAGE 'Data saved successfully'(011) TYPE 'S'.
     ELSE.
-      MESSAGE 'Data could not be saved' TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE 'Data could not be saved'(012) TYPE 'S' DISPLAY LIKE 'E'.
     ENDIF.
 
   ENDMETHOD.
